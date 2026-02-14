@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const prompt = `あなたはバスケットボールチームのランニング分析AIです。
+    const prompt = `あなたはバレーボールチームのフィジカル分析AIです。
 以下のセッションデータを分析し、3〜5個のインサイトをJSON配列で返してください。
 
 データ:

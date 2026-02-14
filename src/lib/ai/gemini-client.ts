@@ -32,8 +32,8 @@ export async function generateSessionInsight(
 ): Promise<AIAnalysisResult> {
   const ai = createGeminiClient(apiKey)
 
-  const prompt = `あなたはバスケットボールチームのフィットネスコーチAIアシスタントです。
-以下のランニングセッションデータを分析し、日本語でインサイトを提供してください。
+  const prompt = `あなたはバレーボールチームのフィットネスコーチAIアシスタントです。
+以下のフィジカルセッションデータを分析し、日本語でインサイトを提供してください。
 
 ## セッション情報
 - 日付: ${sessionData.date}

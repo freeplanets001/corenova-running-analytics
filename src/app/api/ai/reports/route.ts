@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const prompt = `あなたはバスケットボールチームのランニング分析AIです。
+    const prompt = `あなたはバレーボールチームのフィジカル分析AIです。
 以下のセッションデータを基に、${periodLabel}パフォーマンスレポートを作成してください。
 
 対象期間: ${dateRange}

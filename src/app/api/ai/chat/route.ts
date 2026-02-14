@@ -158,8 +158,8 @@ export async function POST(request: NextRequest) {
 
     const teamContext = await getTeamContext(teamId)
 
-    const systemPrompt = `あなたはCORENOVAランニング分析アプリのAIアシスタントです。
-バスケットボールチームのランニングセッション（走行タイム測定）データを分析し、
+    const systemPrompt = `あなたはCORENOVAフィジカル分析アプリのAIアシスタントです。
+バレーボールチームのフィジカルセッション（走行タイム測定等）データを分析し、
 選手やコーチに有益なアドバイスを提供します。
 
 以下のルール:

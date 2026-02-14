@@ -15,12 +15,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "CORENOVA - バスケットボール ランニング分析",
+    default: "CORENOVA - バレーボール フィジカル分析",
     template: "%s | CORENOVA",
   },
   description:
-    "バスケットボールチームのランニングセッションデータを記録・分析し、選手のパフォーマンス向上を支援するプラットフォーム",
-  keywords: ["バスケットボール", "ランニング", "分析", "パフォーマンス", "トレーニング"],
+    "バレーボールチームのフィジカルセッションデータを記録・分析し、選手のパフォーマンス向上を支援するプラットフォーム",
+  keywords: ["バレーボール", "フィジカル", "分析", "パフォーマンス", "トレーニング"],
   authors: [{ name: "CORENOVA" }],
 };
 

@@ -1,5 +1,5 @@
 export const APP_NAME = 'CORENOVA'
-export const APP_DESCRIPTION = 'バスケットボール ランニングセッション分析'
+export const APP_DESCRIPTION = 'バレーボール フィジカルセッション分析'
 
 export const DEFAULT_TEST_TYPES = [
   { name: 'ランニングドリル', unit: '秒', direction: 'decrease' as const, description: '一定距離を走るタイム計測', min_value: 30, max_value: 180, max_runs: 12 },

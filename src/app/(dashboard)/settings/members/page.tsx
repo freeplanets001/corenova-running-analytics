@@ -34,11 +34,11 @@ const ROLES = [
 
 const POSITIONS = [
   { value: '', label: '未設定' },
-  { value: 'PG', label: 'PG（ポイントガード）' },
-  { value: 'SG', label: 'SG（シューティングガード）' },
-  { value: 'SF', label: 'SF（スモールフォワード）' },
-  { value: 'PF', label: 'PF（パワーフォワード）' },
-  { value: 'C', label: 'C（センター）' },
+  { value: 'S', label: 'S（セッター）' },
+  { value: 'OH', label: 'OH（アウトサイドヒッター）' },
+  { value: 'MB', label: 'MB（ミドルブロッカー）' },
+  { value: 'OP', label: 'OP（オポジット）' },
+  { value: 'L', label: 'L（リベロ）' },
 ]
 
 export default function MembersSettingsPage() {
@@ -415,11 +415,11 @@ export default function MembersSettingsPage() {
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
                       <option value="">選択してください</option>
-                      <option value="PG">PG（ポイントガード）</option>
-                      <option value="SG">SG（シューティングガード）</option>
-                      <option value="SF">SF（スモールフォワード）</option>
-                      <option value="PF">PF（パワーフォワード）</option>
-                      <option value="C">C（センター）</option>
+                      <option value="S">S（セッター）</option>
+                      <option value="OH">OH（アウトサイドヒッター）</option>
+                      <option value="MB">MB（ミドルブロッカー）</option>
+                      <option value="OP">OP（オポジット）</option>
+                      <option value="L">L（リベロ）</option>
                     </select>
                   </div>
                 </div>

@@ -206,11 +206,11 @@ export default function ProfileSettingsPage() {
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <option value="">選択してください</option>
-                    <option value="PG">ポイントガード (PG)</option>
-                    <option value="SG">シューティングガード (SG)</option>
-                    <option value="SF">スモールフォワード (SF)</option>
-                    <option value="PF">パワーフォワード (PF)</option>
-                    <option value="C">センター (C)</option>
+                    <option value="S">セッター (S)</option>
+                    <option value="OH">アウトサイドヒッター (OH)</option>
+                    <option value="MB">ミドルブロッカー (MB)</option>
+                    <option value="OP">オポジット (OP)</option>
+                    <option value="L">リベロ (L)</option>
                   </select>
                 </div>
 

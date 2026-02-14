@@ -83,6 +83,9 @@ function LoginForm() {
         return
       }
 
+      // Ensure profile exists (covers case where callback was skipped)
+      await fetch('/api/auth/sync-profile', { method: 'POST' }).catch(() => {})
+
       toast.success('ログインしました')
       router.push(redirectTo)
       router.refresh()

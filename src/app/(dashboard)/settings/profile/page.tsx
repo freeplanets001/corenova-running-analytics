@@ -1,15 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/hooks/use-auth'
+import { ROUTES } from '@/lib/constants/routes'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Avatar } from '@/components/ui/avatar'
-import { User, Mail, Shield, Upload, Loader2 } from 'lucide-react'
+import { User, Mail, Shield, Upload, Loader2, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface ProfileData {
@@ -23,7 +25,8 @@ interface ProfileData {
 }
 
 export default function ProfileSettingsPage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, signOut } = useAuth()
+  const router = useRouter()
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -271,6 +274,24 @@ export default function ProfileSettingsPage() {
             あなたの個人情報は安全に保護されています。プロフィール情報はチームメンバーと共有されますが、
             メールアドレスなどの機密情報は管理者のみが閲覧できます。
           </p>
+        </CardContent>
+      </Card>
+
+      <Card className="border-red-200">
+        <CardHeader>
+          <CardTitle className="text-red-900">アカウント操作</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="destructive"
+            onClick={async () => {
+              await signOut()
+              router.push(ROUTES.LOGIN)
+            }}
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            ログアウト
+          </Button>
         </CardContent>
       </Card>
     </div>

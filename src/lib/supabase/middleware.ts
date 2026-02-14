@@ -59,8 +59,17 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Role-based route protection
-  const role = user.app_metadata?.role as string | undefined
+  // Role-based route protection: check app_metadata first, fall back to profiles table
+  let role = user.app_metadata?.role as string | undefined
+
+  if (!role) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+    role = profile?.role || undefined
+  }
 
   // Admin-only routes
   const adminOnlyPaths = ['/settings/team', '/settings/members', '/settings/test-types', '/entry/bulk', '/entry/import']

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/hooks/use-auth'
 
 const scopeOptions = [
   { id: 'team', label: 'チーム目標', icon: Users, description: 'チーム全体での達成を目指す' },
@@ -24,12 +25,12 @@ const scopeOptions = [
 ]
 
 const metricOptions = [
-  { id: 'avg_time', label: '平均タイム', unit: '秒' },
-  { id: 'best_time', label: 'ベストタイム', unit: '秒' },
-  { id: 'improvement', label: '改善率', unit: '%' },
-  { id: 'stability', label: '安定性（標準偏差）', unit: '秒' },
+  { id: 'average_value', label: '平均タイム', unit: '秒' },
+  { id: 'best_value', label: 'ベストタイム', unit: '秒' },
+  { id: 'improvement_rate', label: '改善率', unit: '%' },
+  { id: 'consistency', label: '安定性（標準偏差）', unit: '秒' },
   { id: 'attendance', label: '出席率', unit: '%' },
-  { id: 'phase_time', label: 'フェーズタイム', unit: '秒' },
+  { id: 'run_count', label: '走行回数', unit: '回' },
 ]
 
 interface TestTypeOption {
@@ -44,6 +45,7 @@ interface PlayerOption {
 
 export default function NewGoalPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [testTypeOptions, setTestTypeOptions] = useState<TestTypeOption[]>([])
   const [playerOptions, setPlayerOptions] = useState<PlayerOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,7 +54,7 @@ export default function NewGoalPage() {
     title: '',
     description: '',
     scope: 'team',
-    metric: 'avg_time',
+    metric: 'average_value',
     testType: '',
     targetValue: '',
     targetDate: '',
@@ -62,23 +64,16 @@ export default function NewGoalPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [sessionsRes, playersRes] = await Promise.all([
-          fetch('/api/sessions'),
+        const [testTypesRes, playersRes] = await Promise.all([
+          fetch('/api/settings/test-types'),
           fetch('/api/players'),
         ])
-        const sessionsJson = await sessionsRes.json()
+        const testTypesJson = await testTypesRes.json()
         const playersJson = await playersRes.json()
 
-        // Extract unique test types from sessions
-        const testTypeSet = new Map<string, string>()
-        for (const s of sessionsJson.sessions || []) {
-          if (s.testType && !testTypeSet.has(s.testType)) {
-            testTypeSet.set(s.testType, s.testType)
-          }
-        }
-        const types: TestTypeOption[] = Array.from(testTypeSet.entries()).map(([key, label]) => ({
-          id: key,
-          label,
+        const types: TestTypeOption[] = (testTypesJson.testTypes || []).map((t: { id: string; name: string }) => ({
+          id: t.id,
+          label: t.name,
         }))
         types.push({ id: 'all', label: 'すべての測定' })
         setTestTypeOptions(types)
@@ -102,13 +97,37 @@ export default function NewGoalPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!user) return
     setSaving(true)
     try {
-      // TODO: POST to goals API when available
+      // Map form scope to DB enum ('group' in UI maps to 'individual_target' in DB)
+      const dbScope = formData.scope === 'group' ? 'individual_target' : formData.scope
+
+      const res = await fetch('/api/goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          scope: dbScope,
+          metric: formData.metric,
+          testTypeId: formData.testType !== 'all' ? formData.testType : null,
+          targetValue: formData.targetValue,
+          targetDate: formData.targetDate,
+          playerId: formData.scope === 'personal' ? formData.selectedPlayers[0] : null,
+          createdBy: user.id,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || '目標の作成に失敗しました')
+      }
+
       toast.success('目標を作成しました')
       router.push('/goals')
-    } catch {
-      toast.error('目標の作成に失敗しました')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '目標の作成に失敗しました')
     } finally {
       setSaving(false)
     }

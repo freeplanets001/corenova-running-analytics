@@ -73,9 +73,10 @@ export function Topbar({ onMenuClick, unreadNotifications = 0 }: TopbarProps) {
     viewer: '閲覧者',
   }
 
-  const handleSignOut = async () => {
-    await signOut()
-    router.push(ROUTES.LOGIN)
+  const handleSignOut = () => {
+    signOut().then(() => {
+      router.push(ROUTES.LOGIN)
+    })
   }
 
   return (

@@ -101,6 +101,12 @@ const navSections: NavSection[] = [
         href: ROUTES.SETTINGS_PROFILE,
         icon: Settings,
       },
+      {
+        label: 'AI設定',
+        href: ROUTES.SETTINGS_AI,
+        icon: Brain,
+        allowedRoles: ['admin'],
+      },
     ],
   },
 ]

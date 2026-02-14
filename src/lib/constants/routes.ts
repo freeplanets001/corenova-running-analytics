@@ -51,4 +51,5 @@ export const ROUTES = {
   SETTINGS_MEMBERS: '/settings/members',
   SETTINGS_TEST_TYPES: '/settings/test-types',
   SETTINGS_NOTIFICATIONS: '/settings/notifications',
+  SETTINGS_AI: '/settings/ai',
 } as const

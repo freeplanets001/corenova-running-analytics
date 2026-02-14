@@ -1,294 +1,189 @@
-'use client';
+'use client'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Users, TrendingUp, Award, Calendar, Download, LineChart } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import {
+  Users, Medal, Activity, Loader2, BarChart3, TrendingUp,
+} from 'lucide-react'
+import Link from 'next/link'
+import { TeamAverageLineChart } from '@/components/charts/team-average-line'
+
+interface TrendItem {
+  sessionId: string
+  date: string
+  testType: string
+  unit: string
+  average: number
+  best: number
+  playerCount: number
+}
+
+interface TopPlayer {
+  playerId: string
+  playerName: string
+  average: number
+  runCount: number
+  rank: number
+}
+
+interface TeamData {
+  teamId: string
+  sessionCount: number
+  totalRuns: number
+  totalPlayers: number
+  overallAverage: number
+  overallBest: number
+  trend: TrendItem[]
+  topPlayers: TopPlayer[]
+}
 
 export default function TeamAnalyticsPage() {
-  const teamStats = {
-    average: 28.9,
-    bestPerformer: '佐藤 花子',
-    bestTime: 27.5,
-    attendanceRate: 87.5,
-    improvementRate: 12.3,
-    totalSessions: 24,
-    activePlayers: 16,
-  };
+  const [data, setData] = useState<TeamData | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const topPerformers = [
-    { rank: 1, name: '佐藤 花子', average: 27.5, improvement: 15.2 },
-    { rank: 2, name: '伊藤 さくら', average: 27.8, improvement: 13.8 },
-    { rank: 3, name: '田中 太郎', average: 28.6, improvement: 11.4 },
-    { rank: 4, name: '山田 美咲', average: 28.8, improvement: 10.9 },
-    { rank: 5, name: '高橋 健太', average: 29.6, improvement: 9.5 },
-  ];
+  useEffect(() => {
+    fetch('/api/analytics/team')
+      .then(res => res.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
 
-  const recentSessions = [
-    { date: '2024-01-15', average: 28.5, attendance: 15 },
-    { date: '2024-01-14', average: 28.9, attendance: 14 },
-    { date: '2024-01-13', average: 29.2, attendance: 16 },
-    { date: '2024-01-12', average: 28.7, attendance: 15 },
-    { date: '2024-01-11', average: 29.1, attendance: 13 },
-  ];
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (!data || !data.trend || !data.trend.length) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+        <Activity className="mb-2 h-10 w-10 opacity-30" />
+        <p>データがありません</p>
+      </div>
+    )
+  }
+
+  const latestSession = data.trend[data.trend.length - 1]
+  const unit = latestSession.unit || '秒'
+
+  const chartData = data.trend.map(s => ({
+    date: s.date,
+    teamAverage: s.average,
+    teamMin: s.best,
+    teamMax: s.average,
+    playerCount: s.playerCount,
+  }))
 
   return (
-    <div className="container mx-auto p-4 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">チーム分析</h1>
-          <p className="text-gray-500 mt-2">チーム全体のパフォーマンスと統計</p>
-        </div>
-        <Button variant="outline">
-          <Download className="mr-2 h-4 w-4" />
-          レポート出力
-        </Button>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">チーム分析</h1>
+        <p className="text-muted-foreground mt-2">
+          全{data.sessionCount}セッション・{data.totalPlayers}名・{data.totalRuns}本のデータ
+        </p>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              チーム平均タイム
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{teamStats.average}秒</div>
-            <p className="text-xs text-green-600 flex items-center gap-1 mt-2">
-              <TrendingUp className="h-3 w-3" />
-              前月比 -2.3秒改善
-            </p>
-          </CardContent>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <BarChart3 className="h-5 w-5 text-blue-600" />
+            <span className="text-sm text-muted-foreground">全体平均</span>
+          </div>
+          <div className="text-3xl font-bold">{data.overallAverage}{unit}</div>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <Award className="h-4 w-4" />
-              最優秀選手
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{teamStats.bestPerformer}</div>
-            <p className="text-xs text-gray-500 mt-2">
-              平均 {teamStats.bestTime}秒
-            </p>
-          </CardContent>
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <TrendingUp className="h-5 w-5 text-green-600" />
+            <span className="text-sm text-muted-foreground">全体ベスト</span>
+          </div>
+          <div className="text-3xl font-bold text-green-600">{data.overallBest}{unit}</div>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              出席率
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{teamStats.attendanceRate}%</div>
-            <p className="text-xs text-gray-500 mt-2">
-              平均 {teamStats.activePlayers}名参加
-            </p>
-          </CardContent>
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <Medal className="h-5 w-5 text-yellow-600" />
+            <span className="text-sm text-muted-foreground">ベストパフォーマー</span>
+          </div>
+          <div className="text-xl font-bold">{data.topPlayers[0]?.playerName || '-'}</div>
+          <div className="text-sm text-muted-foreground">{data.topPlayers[0]?.average || '-'}{unit}</div>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-500 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              改善率
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-green-600">+{teamStats.improvementRate}%</div>
-            <p className="text-xs text-gray-500 mt-2">
-              過去30日間
-            </p>
-          </CardContent>
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-2">
+            <Users className="h-5 w-5 text-purple-600" />
+            <span className="text-sm text-muted-foreground">最新セッション</span>
+          </div>
+          <div className="text-xl font-bold">{latestSession.average}{unit}</div>
+          <div className="text-sm text-muted-foreground">{latestSession.playerCount}名参加</div>
         </Card>
       </div>
 
-      {/* Team Average Chart */}
+      {/* Chart */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <LineChart className="h-5 w-5" />
-            チーム平均タイム推移
-          </CardTitle>
-          <CardDescription>
-            過去30日間のチーム平均パフォーマンス
-          </CardDescription>
+          <CardTitle className="text-base">チーム平均推移</CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Placeholder Chart Area */}
-          <div className="h-80 bg-gradient-to-b from-blue-50 to-white rounded-lg border border-gray-200 flex items-center justify-center">
-            <div className="text-center text-gray-400">
-              <LineChart className="h-16 w-16 mx-auto mb-4" />
-              <p className="text-lg font-medium">折れ線グラフエリア</p>
-              <p className="text-sm mt-2">チーム平均タイムの推移を表示</p>
-            </div>
-          </div>
-          {/* Simple data visualization */}
-          <div className="mt-4 grid grid-cols-5 gap-2">
-            {[28.5, 28.9, 29.2, 28.7, 29.1].map((value, index) => (
-              <div key={index} className="text-center">
-                <div className="h-32 bg-gray-100 rounded flex items-end justify-center pb-2">
-                  <div
-                    className="w-full bg-blue-500 rounded-t"
-                    style={{ height: `${((30 - value) / 3) * 100}%` }}
-                  ></div>
+          <TeamAverageLineChart data={chartData} />
+        </CardContent>
+      </Card>
+
+      {/* Player Rankings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">トップ10選手ランキング</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {data.topPlayers.map((player, idx) => (
+              <Link
+                key={player.playerId}
+                href={`/analytics/player/${player.playerId}`}
+                className={`flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors ${idx < 3 ? 'bg-accent/30' : ''}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8">
+                    {idx === 0 ? <Badge className="bg-yellow-500">1</Badge> :
+                     idx === 1 ? <Badge className="bg-gray-400">2</Badge> :
+                     idx === 2 ? <Badge className="bg-orange-600">3</Badge> :
+                     <span className="text-muted-foreground">{idx + 1}</span>}
+                  </div>
+                  <span className="font-medium">{player.playerName}</span>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">1/{11 + index}</p>
-              </div>
+                <div className="text-right">
+                  <span className="font-bold font-mono">{player.average}{unit}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{player.runCount}本</span>
+                </div>
+              </Link>
             ))}
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Performers */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Award className="h-5 w-5" />
-              トップパフォーマー
-            </CardTitle>
-            <CardDescription>
-              平均タイム上位5名
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {topPerformers.map((player) => (
-                <div
-                  key={player.rank}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`flex items-center justify-center w-8 h-8 rounded-full font-bold ${
-                        player.rank === 1
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : player.rank === 2
-                          ? 'bg-gray-200 text-gray-700'
-                          : player.rank === 3
-                          ? 'bg-orange-100 text-orange-700'
-                          : 'bg-blue-100 text-blue-700'
-                      }`}
-                    >
-                      {player.rank}
-                    </div>
-                    <div>
-                      <p className="font-medium">{player.name}</p>
-                      <p className="text-sm text-gray-500">平均 {player.average}秒</p>
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className="text-green-600">
-                    +{player.improvement}%
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent Sessions */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              最近のセッション
-            </CardTitle>
-            <CardDescription>
-              直近5回の練習セッション
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {recentSessions.map((session, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium">{session.date}</p>
-                    <p className="text-sm text-gray-500">
-                      出席: {session.attendance}名
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-lg">{session.average}秒</p>
-                    <p className="text-xs text-gray-500">平均タイム</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Heatmap Placeholder */}
+      {/* Session History */}
       <Card>
         <CardHeader>
-          <CardTitle>パフォーマンスヒートマップ</CardTitle>
-          <CardDescription>
-            選手別・日付別のパフォーマンス可視化
-          </CardDescription>
+          <CardTitle className="text-base">セッション履歴</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <div className="inline-grid grid-cols-6 gap-1 min-w-full">
-              {/* Header row */}
-              <div className="p-2"></div>
-              {['1/11', '1/12', '1/13', '1/14', '1/15'].map((date) => (
-                <div key={date} className="p-2 text-center text-sm font-medium">
-                  {date}
+          <div className="space-y-2">
+            {[...data.trend].reverse().map(s => (
+              <Link key={s.sessionId} href={`/sessions/${s.sessionId}`} className="flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 transition-colors">
+                <div>
+                  <span className="font-medium">{new Date(s.date).toLocaleDateString('ja-JP')}</span>
+                  <span className="ml-2 text-sm text-muted-foreground">{s.testType}</span>
                 </div>
-              ))}
-
-              {/* Data rows */}
-              {topPerformers.slice(0, 8).map((player) => (
-                <>
-                  <div className="p-2 text-sm font-medium text-right pr-4">
-                    {player.name}
-                  </div>
-                  {[0, 1, 2, 3, 4].map((i) => {
-                    const intensity = Math.random();
-                    return (
-                      <div
-                        key={i}
-                        className={`p-2 rounded ${
-                          intensity > 0.7
-                            ? 'bg-green-600'
-                            : intensity > 0.4
-                            ? 'bg-green-400'
-                            : 'bg-green-200'
-                        }`}
-                        title={`${(27 + Math.random() * 3).toFixed(1)}秒`}
-                      ></div>
-                    );
-                  })}
-                </>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center justify-center gap-4 mt-4 text-sm text-gray-500">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-green-200 rounded"></div>
-              <span>遅い</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-green-400 rounded"></div>
-              <span>標準</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-green-600 rounded"></div>
-              <span>速い</span>
-            </div>
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="flex items-center gap-1"><Users className="h-3 w-3" />{s.playerCount}名</span>
+                  <span className="font-bold">{s.average}{s.unit}</span>
+                </div>
+              </Link>
+            ))}
           </div>
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

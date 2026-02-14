@@ -1,17 +1,110 @@
-'use client';
+'use client'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Avatar } from '@/components/ui/avatar';
-import { User, Mail, Shield, Upload } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/lib/hooks/use-auth'
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Avatar } from '@/components/ui/avatar'
+import { User, Mail, Shield, Upload, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+
+interface ProfileData {
+  display_name: string
+  player_name: string | null
+  jersey_number: number | null
+  position: string | null
+  date_of_birth: string | null
+  height_cm: number | null
+  weight_kg: number | null
+}
 
 export default function ProfileSettingsPage() {
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log('Profile update submitted');
-  };
+  const { user, loading: authLoading } = useAuth()
+  const supabase = createClient()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [email, setEmail] = useState('')
+  const [form, setForm] = useState<ProfileData>({
+    display_name: '',
+    player_name: null,
+    jersey_number: null,
+    position: null,
+    date_of_birth: null,
+    height_cm: null,
+    weight_kg: null,
+  })
+
+  useEffect(() => {
+    if (!user) return
+
+    const fetchProfile = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('display_name, email, player_name, jersey_number, position, date_of_birth, height_cm, weight_kg')
+        .eq('id', user.id)
+        .single()
+
+      if (error) {
+        toast.error('プロフィールの取得に失敗しました')
+        setLoading(false)
+        return
+      }
+
+      setEmail(data.email)
+      setForm({
+        display_name: data.display_name || '',
+        player_name: data.player_name,
+        jersey_number: data.jersey_number,
+        position: data.position,
+        date_of_birth: data.date_of_birth,
+        height_cm: data.height_cm,
+        weight_kg: data.weight_kg,
+      })
+      setLoading(false)
+    }
+
+    fetchProfile()
+  }, [user, supabase])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+
+    setSaving(true)
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        display_name: form.display_name,
+        player_name: form.player_name,
+        jersey_number: form.jersey_number,
+        position: form.position,
+        date_of_birth: form.date_of_birth,
+        height_cm: form.height_cm,
+        weight_kg: form.weight_kg,
+      })
+      .eq('id', user.id)
+
+    setSaving(false)
+
+    if (error) {
+      toast.error('プロフィールの更新に失敗しました')
+      return
+    }
+
+    toast.success('プロフィールを更新しました')
+  }
+
+  if (authLoading || loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -37,7 +130,7 @@ export default function ProfileSettingsPage() {
               </Avatar>
               <div className="space-y-2">
                 <Label>プロフィール画像</Label>
-                <Button variant="outline" size="sm">
+                <Button type="button" variant="outline" size="sm">
                   <Upload className="mr-2 h-4 w-4" />
                   画像をアップロード
                 </Button>
@@ -53,8 +146,10 @@ export default function ProfileSettingsPage() {
                 <Input
                   id="displayName"
                   type="text"
-                  placeholder="山田 太郎"
-                  defaultValue="山田 太郎"
+                  placeholder="表示名を入力"
+                  value={form.display_name}
+                  onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+                  required
                 />
               </div>
 
@@ -64,7 +159,7 @@ export default function ProfileSettingsPage() {
                   <Input
                     id="email"
                     type="email"
-                    defaultValue="yamada@example.com"
+                    value={email}
                     disabled
                     className="pr-10"
                   />
@@ -84,8 +179,9 @@ export default function ProfileSettingsPage() {
                   <Input
                     id="playerName"
                     type="text"
-                    placeholder="山田 太郎"
-                    defaultValue="山田 太郎"
+                    placeholder="選手名を入力"
+                    value={form.player_name || ''}
+                    onChange={(e) => setForm({ ...form, player_name: e.target.value || null })}
                   />
                 </div>
 
@@ -94,8 +190,9 @@ export default function ProfileSettingsPage() {
                   <Input
                     id="jerseyNumber"
                     type="number"
-                    placeholder="23"
-                    defaultValue="23"
+                    placeholder="背番号"
+                    value={form.jersey_number ?? ''}
+                    onChange={(e) => setForm({ ...form, jersey_number: e.target.value ? Number(e.target.value) : null })}
                   />
                 </div>
 
@@ -103,6 +200,8 @@ export default function ProfileSettingsPage() {
                   <Label htmlFor="position">ポジション</Label>
                   <select
                     id="position"
+                    value={form.position || ''}
+                    onChange={(e) => setForm({ ...form, position: e.target.value || null })}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   >
                     <option value="">選択してください</option>
@@ -119,8 +218,10 @@ export default function ProfileSettingsPage() {
                   <Input
                     id="height"
                     type="number"
+                    step="0.1"
                     placeholder="175"
-                    defaultValue="175"
+                    value={form.height_cm ?? ''}
+                    onChange={(e) => setForm({ ...form, height_cm: e.target.value ? Number(e.target.value) : null })}
                   />
                 </div>
 
@@ -129,8 +230,10 @@ export default function ProfileSettingsPage() {
                   <Input
                     id="weight"
                     type="number"
+                    step="0.1"
                     placeholder="70"
-                    defaultValue="70"
+                    value={form.weight_kg ?? ''}
+                    onChange={(e) => setForm({ ...form, weight_kg: e.target.value ? Number(e.target.value) : null })}
                   />
                 </div>
 
@@ -139,18 +242,17 @@ export default function ProfileSettingsPage() {
                   <Input
                     id="birthdate"
                     type="date"
-                    defaultValue="2000-01-01"
+                    value={form.date_of_birth || ''}
+                    onChange={(e) => setForm({ ...form, date_of_birth: e.target.value || null })}
                   />
                 </div>
               </div>
             </div>
 
             <div className="flex gap-3">
-              <Button type="submit">
+              <Button type="submit" disabled={saving}>
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 変更を保存
-              </Button>
-              <Button type="button" variant="outline">
-                キャンセル
               </Button>
             </div>
           </form>
@@ -172,5 +274,5 @@ export default function ProfileSettingsPage() {
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

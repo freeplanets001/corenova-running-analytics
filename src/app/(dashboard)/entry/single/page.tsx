@@ -1,154 +1,182 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Save, Plus, Trash2, Calendar, User } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { ArrowLeft, Loader2, Plus, Minus, Save, User } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+
+interface Session { id: string; date: string; testType: string }
+interface Player { id: string; name: string }
 
 export default function SingleEntryPage() {
-  const [session, setSession] = useState('2024-01-15 朝練習');
-  const [playerName, setPlayerName] = useState('');
-  const [runs, setRuns] = useState<number[]>([0, 0, 0, 0, 0]);
-  const [isSaving, setIsSaving] = useState(false);
+  const router = useRouter()
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [players, setPlayers] = useState<Player[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedSession, setSelectedSession] = useState('')
+  const [selectedPlayer, setSelectedPlayer] = useState('')
+  const [runs, setRuns] = useState<string[]>(['', '', ''])
+  const [submitting, setSubmitting] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
 
-  const handleAddRun = () => {
-    setRuns([...runs, 0]);
-  };
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/sessions').then(r => r.json()),
+      fetch('/api/players').then(r => r.json()),
+    ]).then(([sData, pData]) => {
+      setSessions(sData.sessions?.map((s: { id: string; date: string; testType: string }) => ({
+        id: s.id,
+        date: s.date,
+        testType: s.testType,
+      })) || [])
+      setPlayers(pData.players || [])
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
 
-  const handleRemoveRun = (index: number) => {
-    if (runs.length > 1) {
-      setRuns(runs.filter((_, i) => i !== index));
+  const addRun = () => setRuns(prev => [...prev, ''])
+  const removeRun = () => { if (runs.length > 1) setRuns(prev => prev.slice(0, -1)) }
+  const updateRun = (idx: number, val: string) => {
+    setRuns(prev => prev.map((r, i) => i === idx ? val : r))
+  }
+
+  const validRuns = runs.filter(r => r && !isNaN(parseFloat(r)))
+  const avg = validRuns.length > 0
+    ? Math.round((validRuns.reduce((s, r) => s + parseFloat(r), 0) / validRuns.length) * 10) / 10
+    : 0
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedSession || !selectedPlayer || validRuns.length === 0) return
+    setSubmitting(true)
+    setMessage(null)
+
+    try {
+      const res = await fetch(`/api/sessions/${selectedSession}/runs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerId: selectedPlayer,
+          runs: validRuns.map((r, i) => ({ runNumber: i + 1, value: parseFloat(r) })),
+        }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      setMessage('データを保存しました')
+      setRuns(['', '', ''])
+    } catch {
+      setMessage('保存に失敗しました')
     }
-  };
+    setSubmitting(false)
+  }
 
-  const handleRunChange = (index: number, value: string) => {
-    const newRuns = [...runs];
-    newRuns[index] = parseFloat(value) || 0;
-    setRuns(newRuns);
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsSaving(false);
-    alert('データを保存しました');
-  };
-
-  const average = runs.length > 0 ? (runs.reduce((a, b) => a + b, 0) / runs.length).toFixed(2) : '0.00';
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
-    <div className="container mx-auto max-w-2xl p-4 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">個別データ入力</h1>
-        <p className="text-gray-500 mt-2">選手の走行データを入力します</p>
+    <div className="space-y-6 max-w-lg">
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">個人入力</h1>
+          <p className="text-muted-foreground mt-1">1名分のデータを入力します</p>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            セッション情報
+          <CardTitle className="text-base flex items-center gap-2">
+            <User className="h-5 w-5" /> データ入力
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="session">練習セッション</Label>
-            <select
-              id="session"
-              value={session}
-              onChange={(e) => setSession(e.target.value)}
-              className="w-full h-12 rounded-md border border-gray-300 px-3 text-base"
-            >
-              <option value="2024-01-15 朝練習">2024-01-15 朝練習</option>
-              <option value="2024-01-15 午後練習">2024-01-15 午後練習</option>
-              <option value="2024-01-16 朝練習">2024-01-16 朝練習</option>
-              <option value="2024-01-16 午後練習">2024-01-16 午後練習</option>
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="player">選手名</Label>
-            <div className="relative">
-              <User className="absolute left-3 top-4 h-5 w-5 text-gray-400" />
-              <Input
-                id="player"
-                type="text"
-                placeholder="選手名を入力"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                className="pl-10 h-12 text-base"
-              />
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>セッション</Label>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={selectedSession}
+                onChange={e => setSelectedSession(e.target.value)}
+                required
+              >
+                <option value="">セッションを選択...</option>
+                {sessions.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {new Date(s.date).toLocaleDateString('ja-JP')} - {s.testType}
+                  </option>
+                ))}
+              </select>
             </div>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>走行データ</CardTitle>
-          <CardDescription>
-            各ランの秒数を入力してください（タップしやすい大きめのボタン）
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {runs.map((run, index) => (
-            <div key={index} className="flex items-center gap-3">
-              <Label className="min-w-20 text-base">ラン {index + 1}</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={run}
-                onChange={(e) => handleRunChange(index, e.target.value)}
-                className="h-14 text-lg"
-                placeholder="0.00"
-              />
-              <span className="text-gray-500 min-w-8 text-base">秒</span>
-              {runs.length > 1 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleRemoveRun(index)}
-                  className="h-14 w-14"
-                >
-                  <Trash2 className="h-5 w-5 text-red-500" />
-                </Button>
+            <div className="space-y-2">
+              <Label>選手</Label>
+              <select
+                className="w-full rounded-md border px-3 py-2 text-sm"
+                value={selectedPlayer}
+                onChange={e => setSelectedPlayer(e.target.value)}
+                required
+              >
+                <option value="">選手を選択...</option>
+                {players.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>計測データ</Label>
+                <div className="flex gap-1">
+                  <Button type="button" variant="outline" size="sm" onClick={removeRun} disabled={runs.length <= 1}>
+                    <Minus className="h-3 w-3" />
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={addRun} disabled={runs.length >= 12}>
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                {runs.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground w-16">{i + 1}本目</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="秒"
+                      value={r}
+                      onChange={e => updateRun(i, e.target.value)}
+                      className="text-lg font-mono"
+                    />
+                  </div>
+                ))}
+              </div>
+              {avg > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  平均: <span className="font-bold text-foreground">{avg}秒</span>
+                </p>
               )}
             </div>
-          ))}
 
-          <Button
-            variant="outline"
-            onClick={handleAddRun}
-            className="w-full h-12 text-base"
-          >
-            <Plus className="mr-2 h-5 w-5" />
-            ランを追加
-          </Button>
+            {message && (
+              <p className={`text-sm ${message.includes('失敗') ? 'text-red-600' : 'text-green-600'}`}>{message}</p>
+            )}
 
-          <div className="rounded-lg bg-blue-50 p-4 mt-4">
-            <div className="flex items-center justify-between">
-              <span className="text-base font-medium text-blue-900">平均タイム</span>
-              <Badge variant="secondary" className="text-lg px-4 py-1">
-                {average} 秒
-              </Badge>
-            </div>
-          </div>
+            <Button type="submit" className="w-full" disabled={submitting || !selectedSession || !selectedPlayer || validRuns.length === 0}>
+              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              保存
+            </Button>
+          </form>
         </CardContent>
       </Card>
-
-      <Button
-        onClick={handleSave}
-        disabled={!playerName || isSaving}
-        className="w-full h-14 text-lg"
-        size="lg"
-      >
-        <Save className="mr-2 h-5 w-5" />
-        {isSaving ? '保存中...' : '保存'}
-      </Button>
     </div>
-  );
+  )
 }

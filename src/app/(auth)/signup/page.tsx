@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
@@ -14,8 +14,15 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Loader2, Mail, Lock, User, UserPlus } from 'lucide-react'
+import { Loader2, Mail, Lock, User, UserPlus, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
+
+interface UnlinkedPlayer {
+  id: string
+  name: string
+  jerseyNumber: number | null
+  position: string | null
+}
 
 const signupSchema = z
   .object({
@@ -23,7 +30,6 @@ const signupSchema = z
     password: z.string().min(6, 'パスワードは6文字以上で入力してください'),
     confirmPassword: z.string().min(1, 'パスワードを再度入力してください'),
     displayName: z.string().min(1, '表示名を入力してください').max(50, '表示名は50文字以内で入力してください'),
-    playerName: z.string().max(50, '選手名は50文字以内で入力してください').optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'パスワードが一致しません',
@@ -37,6 +43,15 @@ export default function SignupPage() {
   const supabase = createClient()
   const [isLoading, setIsLoading] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
+  const [unlinkedPlayers, setUnlinkedPlayers] = useState<UnlinkedPlayer[]>([])
+  const [selectedPlayerId, setSelectedPlayerId] = useState('')
+
+  useEffect(() => {
+    fetch('/api/players/unlinked')
+      .then(res => res.json())
+      .then(d => setUnlinkedPlayers(d.players || []))
+      .catch(() => {})
+  }, [])
 
   const form = useForm<SignupValues>({
     resolver: zodResolver(signupSchema),
@@ -45,21 +60,23 @@ export default function SignupPage() {
       password: '',
       confirmPassword: '',
       displayName: '',
-      playerName: '',
     },
   })
 
   const onSubmit = async (values: SignupValues) => {
     setIsLoading(true)
     try {
+      const selectedPlayer = unlinkedPlayers.find(p => p.id === selectedPlayerId)
+
       const { error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/callback`,
+          emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/callback`,
           data: {
             display_name: values.displayName,
-            player_name: values.playerName || null,
+            linked_player_id: selectedPlayerId || null,
+            player_name: selectedPlayer?.name || null,
           },
         },
       })
@@ -79,6 +96,17 @@ export default function SignupPage() {
       toast.error('予期しないエラーが発生しました')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Auto-fill display name when player is selected
+  const handlePlayerSelect = (playerId: string) => {
+    setSelectedPlayerId(playerId)
+    if (playerId) {
+      const player = unlinkedPlayers.find(p => p.id === playerId)
+      if (player && !form.getValues('displayName')) {
+        form.setValue('displayName', player.name)
+      }
     }
   }
 
@@ -121,6 +149,34 @@ export default function SignupPage() {
 
       <CardContent>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {/* Player Linking */}
+          {unlinkedPlayers.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="linkedPlayer" className="flex items-center gap-1">
+                <Link2 className="h-3.5 w-3.5" />
+                選手データと紐付け
+              </Label>
+              <select
+                id="linkedPlayer"
+                value={selectedPlayerId}
+                onChange={(e) => handlePlayerSelect(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="">紐付けない（新規選手として登録）</option>
+                {unlinkedPlayers.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {p.jerseyNumber ? ` #${p.jerseyNumber}` : ''}
+                    {p.position ? ` (${p.position})` : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                既にチームに登録されている選手データと紐付けることで、過去の計測データが引き継がれます
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="email">メールアドレス</Label>
             <div className="relative">
@@ -155,28 +211,6 @@ export default function SignupPage() {
             {form.formState.errors.displayName && (
               <p className="text-sm text-destructive">
                 {form.formState.errors.displayName.message}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="playerName">
-              選手名{' '}
-              <span className="text-xs text-muted-foreground">(任意)</span>
-            </Label>
-            <div className="relative">
-              <UserPlus className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="playerName"
-                type="text"
-                placeholder="選手としての登録名"
-                className="pl-10"
-                {...form.register('playerName')}
-              />
-            </div>
-            {form.formState.errors.playerName && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.playerName.message}
               </p>
             )}
           </div>

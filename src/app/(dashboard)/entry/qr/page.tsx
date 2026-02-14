@@ -1,36 +1,96 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { QrCode, Scan, Download, CheckCircle, Calendar, Users } from 'lucide-react';
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { QrCode, Scan, Download, CheckCircle, Calendar, Users, Loader2 } from 'lucide-react'
+
+interface SessionItem {
+  id: string
+  date: string
+  testType: string
+}
+
+interface PlayerItem {
+  id: string
+  name: string
+}
 
 export default function QRPage() {
-  const [selectedSession, setSelectedSession] = useState('2024-01-15 朝練習');
-  const [scannedPlayers, setScannedPlayers] = useState<string[]>([]);
-  const [isScanning, setIsScanning] = useState(false);
+  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [players, setPlayers] = useState<PlayerItem[]>([])
+  const [selectedSessionId, setSelectedSessionId] = useState('')
+  const [scannedPlayers, setScannedPlayers] = useState<string[]>([])
+  const [isScanning, setIsScanning] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [sessionsRes, playersRes] = await Promise.all([
+          fetch('/api/sessions'),
+          fetch('/api/players'),
+        ])
+        const sessionsJson = await sessionsRes.json()
+        const playersJson = await playersRes.json()
+
+        const sessionList = (sessionsJson.sessions || []).map((s: Record<string, unknown>) => ({
+          id: s.id as string,
+          date: s.date as string,
+          testType: s.testType as string,
+        }))
+        setSessions(sessionList)
+        if (sessionList.length > 0) setSelectedSessionId(sessionList[0].id)
+
+        setPlayers(
+          (playersJson.players || []).map((p: Record<string, unknown>) => ({
+            id: p.id as string,
+            name: p.name as string,
+          }))
+        )
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  const selectedSession = sessions.find(s => s.id === selectedSessionId)
 
   const handleGenerateQR = () => {
-    alert('QRコードを生成しました');
-  };
+    if (!selectedSession) return
+    alert('QRコードを生成しました')
+  }
 
   const handleDownloadQR = () => {
-    alert('QRコードをダウンロードしました');
-  };
+    alert('QRコードをダウンロードしました')
+  }
 
   const simulateScan = () => {
-    setIsScanning(true);
+    if (players.length === 0) return
+    setIsScanning(true)
     setTimeout(() => {
-      const players = ['田中 太郎', '佐藤 花子', '鈴木 一郎', '山田 美咲'];
-      const randomPlayer = players[Math.floor(Math.random() * players.length)];
-      if (!scannedPlayers.includes(randomPlayer)) {
-        setScannedPlayers([...scannedPlayers, randomPlayer]);
+      const unscanned = players.filter(p => !scannedPlayers.includes(p.name))
+      if (unscanned.length > 0) {
+        const random = unscanned[Math.floor(Math.random() * unscanned.length)]
+        setScannedPlayers(prev => [...prev, random.name])
       }
-      setIsScanning(false);
-    }, 1000);
-  };
+      setIsScanning(false)
+    }, 1000)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="container mx-auto max-w-4xl p-4 space-y-6">
@@ -51,7 +111,6 @@ export default function QRPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Generate QR Tab */}
         <TabsContent value="generate" className="space-y-6 mt-6">
           <Card>
             <CardHeader>
@@ -64,19 +123,24 @@ export default function QRPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <select
-                value={selectedSession}
-                onChange={(e) => setSelectedSession(e.target.value)}
-                className="w-full h-10 rounded-md border border-gray-300 px-3"
-              >
-                <option value="2024-01-15 朝練習">2024-01-15 朝練習</option>
-                <option value="2024-01-15 午後練習">2024-01-15 午後練習</option>
-                <option value="2024-01-16 朝練習">2024-01-16 朝練習</option>
-                <option value="2024-01-16 午後練習">2024-01-16 午後練習</option>
-              </select>
+              {sessions.length === 0 ? (
+                <p className="text-muted-foreground text-sm">セッションがありません</p>
+              ) : (
+                <select
+                  value={selectedSessionId}
+                  onChange={(e) => setSelectedSessionId(e.target.value)}
+                  className="w-full h-10 rounded-md border border-gray-300 px-3"
+                >
+                  {sessions.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.date} {s.testType}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               <div className="flex gap-3">
-                <Button onClick={handleGenerateQR} className="flex-1">
+                <Button onClick={handleGenerateQR} className="flex-1" disabled={!selectedSession}>
                   <QrCode className="mr-2 h-4 w-4" />
                   QRコード生成
                 </Button>
@@ -84,48 +148,44 @@ export default function QRPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>生成されたQRコード</CardTitle>
-              <CardDescription>
-                選手はこのQRコードをスキャンしてチェックインします
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {/* Placeholder QR Code */}
-              <div className="flex flex-col items-center space-y-4">
-                <div className="w-64 h-64 bg-white border-4 border-gray-300 rounded-lg flex items-center justify-center">
-                  <div className="text-center">
-                    <QrCode className="h-32 w-32 mx-auto text-gray-400 mb-4" />
-                    <p className="text-gray-500 font-medium">{selectedSession}</p>
+          {selectedSession && (
+            <Card>
+              <CardHeader>
+                <CardTitle>生成されたQRコード</CardTitle>
+                <CardDescription>
+                  選手はこのQRコードをスキャンしてチェックインします
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center space-y-4">
+                  <div className="w-64 h-64 bg-white border-4 border-gray-300 rounded-lg flex items-center justify-center">
+                    <div className="text-center">
+                      <QrCode className="h-32 w-32 mx-auto text-gray-400 mb-4" />
+                      <p className="text-gray-500 font-medium">{selectedSession.date}</p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="w-full max-w-md space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                    <span className="text-sm font-medium">セッション</span>
-                    <Badge variant="secondary">{selectedSession}</Badge>
+                  <div className="w-full max-w-md space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                      <span className="text-sm font-medium">セッション</span>
+                      <Badge variant="secondary">{selectedSession.date} {selectedSession.testType}</Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                      <span className="text-sm font-medium">セッションID</span>
+                      <code className="text-xs bg-white px-2 py-1 rounded">{selectedSession.id.slice(0, 8)}</code>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                    <span className="text-sm font-medium">QRコードID</span>
-                    <code className="text-sm bg-white px-2 py-1 rounded">QR-20240115-001</code>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                    <span className="text-sm font-medium">有効期限</span>
-                    <span className="text-sm">2024-01-15 23:59</span>
-                  </div>
-                </div>
 
-                <Button onClick={handleDownloadQR} variant="outline" className="w-full max-w-md">
-                  <Download className="mr-2 h-4 w-4" />
-                  QRコードをダウンロード
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                  <Button onClick={handleDownloadQR} variant="outline" className="w-full max-w-md">
+                    <Download className="mr-2 h-4 w-4" />
+                    QRコードをダウンロード
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
-        {/* Scan QR Tab */}
         <TabsContent value="scan" className="space-y-6 mt-6">
           <Card>
             <CardHeader>
@@ -138,7 +198,6 @@ export default function QRPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Scanner Placeholder */}
               <div className="flex flex-col items-center space-y-4">
                 <div className="w-full max-w-md aspect-square bg-black rounded-lg flex items-center justify-center relative overflow-hidden">
                   {isScanning ? (
@@ -152,13 +211,12 @@ export default function QRPage() {
                       <p className="text-white">QRコードをカメラに向けてください</p>
                     </div>
                   )}
-                  {/* Scanner frame overlay */}
                   <div className="absolute inset-8 border-2 border-blue-500 rounded-lg"></div>
                 </div>
 
                 <Button
                   onClick={simulateScan}
-                  disabled={isScanning}
+                  disabled={isScanning || players.length === 0}
                   size="lg"
                   className="w-full max-w-md"
                 >
@@ -217,19 +275,21 @@ export default function QRPage() {
               <CardContent>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="font-medium">セッション名</span>
-                    <span>{selectedSession}</span>
+                    <span className="font-medium">セッション</span>
+                    <span>{selectedSession ? `${selectedSession.date} ${selectedSession.testType}` : '未選択'}</span>
                   </div>
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <span className="font-medium">チェックイン数</span>
                     <Badge variant="secondary">{scannedPlayers.length}名</Badge>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="font-medium">出席率</span>
-                    <Badge variant="secondary">
-                      {((scannedPlayers.length / 20) * 100).toFixed(0)}%
-                    </Badge>
-                  </div>
+                  {players.length > 0 && (
+                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium">出席率</span>
+                      <Badge variant="secondary">
+                        {((scannedPlayers.length / players.length) * 100).toFixed(0)}%
+                      </Badge>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -237,5 +297,5 @@ export default function QRPage() {
         </TabsContent>
       </Tabs>
     </div>
-  );
+  )
 }

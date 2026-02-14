@@ -1,60 +1,142 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Upload, FileSpreadsheet, CheckCircle, X, Download, AlertCircle } from 'lucide-react';
+import { useState, useRef } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Upload, FileSpreadsheet, CheckCircle, X, Download, AlertCircle, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import * as XLSX from 'xlsx'
+
+interface PreviewRow {
+  player: string
+  runs: number[]
+}
 
 export default function ImportPage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importSuccess, setImportSuccess] = useState(false);
+  const [file, setFile] = useState<File | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importSuccess, setImportSuccess] = useState(false)
+  const [previewData, setPreviewData] = useState<PreviewRow[]>([])
+  const [maxRuns, setMaxRuns] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const parseExcel = async (f: File) => {
+    try {
+      const buffer = await f.arrayBuffer()
+      const workbook = XLSX.read(buffer, { type: 'array' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const json = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 })
+
+      const rows: PreviewRow[] = []
+      let max = 0
+      for (const row of json) {
+        if (!row || row.length < 2) continue
+        const player = String(row[0]).trim()
+        if (!player) continue
+        const runs = row.slice(1).map(v => Number(v)).filter(v => !isNaN(v) && v > 0)
+        if (runs.length === 0) continue
+        max = Math.max(max, runs.length)
+        rows.push({ player, runs })
+      }
+
+      setPreviewData(rows)
+      setMaxRuns(max)
+    } catch {
+      toast.error('Excelファイルの読み取りに失敗しました')
+      setFile(null)
+    }
+  }
+
+  const handleFile = (f: File) => {
+    if (f.name.endsWith('.xlsx') || f.name.endsWith('.xls')) {
+      setFile(f)
+      setImportSuccess(false)
+      setPreviewData([])
+      parseExcel(f)
+    } else {
+      toast.error('.xlsx または .xls ファイルを選択してください')
+    }
+  }
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+    e.preventDefault()
+    setIsDragging(true)
+  }
 
   const handleDragLeave = () => {
-    setIsDragging(false);
-  };
+    setIsDragging(false)
+  }
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && (droppedFile.name.endsWith('.xlsx') || droppedFile.name.endsWith('.xls'))) {
-      setFile(droppedFile);
-    }
-  };
+    e.preventDefault()
+    setIsDragging(false)
+    const droppedFile = e.dataTransfer.files[0]
+    if (droppedFile) handleFile(droppedFile)
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-    }
-  };
+    const selectedFile = e.target.files?.[0]
+    if (selectedFile) handleFile(selectedFile)
+  }
 
   const handleRemoveFile = () => {
-    setFile(null);
-    setImportSuccess(false);
-  };
+    setFile(null)
+    setImportSuccess(false)
+    setPreviewData([])
+    setMaxRuns(0)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
 
   const handleImport = async () => {
-    setIsImporting(true);
-    // Simulate import process
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setIsImporting(false);
-    setImportSuccess(true);
-  };
+    if (previewData.length === 0) return
+    setIsImporting(true)
 
-  const mockPreviewData = [
-    { player: '田中 太郎', run1: 28.5, run2: 29.1, run3: 28.8, run4: 29.2, run5: 28.6 },
-    { player: '佐藤 花子', run1: 27.8, run2: 28.2, run3: 27.9, run4: 28.5, run5: 27.7 },
-    { player: '鈴木 一郎', run1: 30.1, run2: 29.8, run3: 30.3, run4: 29.9, run5: 30.0 },
-  ];
+    try {
+      // Create session first
+      const sessionRes = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: new Date().toISOString().split('T')[0] }),
+      })
+      const sessionJson = await sessionRes.json()
+      if (!sessionJson.id) throw new Error('セッション作成に失敗')
+
+      // Get players to match names
+      const playersRes = await fetch('/api/players')
+      const playersJson = await playersRes.json()
+      const playerMap = new Map<string, string>()
+      for (const p of playersJson.players || []) {
+        playerMap.set(p.name, p.id)
+      }
+
+      // Submit runs
+      const runs: Array<{ sessionId: string; playerId: string; runNumber: number; value: number }> = []
+      for (const row of previewData) {
+        const playerId = playerMap.get(row.player)
+        if (!playerId) continue
+        row.runs.forEach((value, i) => {
+          runs.push({ sessionId: sessionJson.id, playerId, runNumber: i + 1, value })
+        })
+      }
+
+      if (runs.length > 0) {
+        await fetch(`/api/sessions/${sessionJson.id}/runs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ runs }),
+        })
+      }
+
+      setImportSuccess(true)
+      toast.success(`${previewData.length}名のデータをインポートしました`)
+    } catch {
+      toast.error('インポートに失敗しました')
+    } finally {
+      setIsImporting(false)
+    }
+  }
 
   return (
     <div className="container mx-auto max-w-5xl p-4 space-y-6">
@@ -63,7 +145,6 @@ export default function ImportPage() {
         <p className="text-gray-500 mt-2">Excelファイルから走行データを一括インポート</p>
       </div>
 
-      {/* Supported Formats */}
       <Card>
         <CardHeader>
           <CardTitle>サポート形式</CardTitle>
@@ -89,7 +170,6 @@ export default function ImportPage() {
         </CardContent>
       </Card>
 
-      {/* Upload Area */}
       <Card>
         <CardHeader>
           <CardTitle>ファイルアップロード</CardTitle>
@@ -121,6 +201,7 @@ export default function ImportPage() {
               </label>
               <input
                 id="file-upload"
+                ref={fileInputRef}
                 type="file"
                 accept=".xlsx,.xls"
                 onChange={handleFileSelect}
@@ -159,12 +240,12 @@ export default function ImportPage() {
         </CardContent>
       </Card>
 
-      {/* Preview */}
-      {file && !importSuccess && (
+      {/* Preview from actual file */}
+      {file && !importSuccess && previewData.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>プレビュー</CardTitle>
-            <CardDescription>インポートされるデータの確認</CardDescription>
+            <CardDescription>ファイルから読み取ったデータ</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -174,104 +255,50 @@ export default function ImportPage() {
                     <th className="border border-gray-300 p-3 text-left font-semibold">
                       選手名
                     </th>
-                    <th className="border border-gray-300 p-3 text-center font-semibold">
-                      ラン 1
-                    </th>
-                    <th className="border border-gray-300 p-3 text-center font-semibold">
-                      ラン 2
-                    </th>
-                    <th className="border border-gray-300 p-3 text-center font-semibold">
-                      ラン 3
-                    </th>
-                    <th className="border border-gray-300 p-3 text-center font-semibold">
-                      ラン 4
-                    </th>
-                    <th className="border border-gray-300 p-3 text-center font-semibold">
-                      ラン 5
-                    </th>
+                    {Array.from({ length: maxRuns }, (_, i) => (
+                      <th key={i} className="border border-gray-300 p-3 text-center font-semibold">
+                        ラン {i + 1}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {mockPreviewData.map((row, index) => (
+                  {previewData.map((row, index) => (
                     <tr key={index} className="hover:bg-gray-50">
                       <td className="border border-gray-300 p-3">{row.player}</td>
-                      <td className="border border-gray-300 p-3 text-center">{row.run1}</td>
-                      <td className="border border-gray-300 p-3 text-center">{row.run2}</td>
-                      <td className="border border-gray-300 p-3 text-center">{row.run3}</td>
-                      <td className="border border-gray-300 p-3 text-center">{row.run4}</td>
-                      <td className="border border-gray-300 p-3 text-center">{row.run5}</td>
+                      {Array.from({ length: maxRuns }, (_, i) => (
+                        <td key={i} className="border border-gray-300 p-3 text-center">
+                          {row.runs[i] ?? ''}
+                        </td>
+                      ))}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <div className="mt-4 text-sm text-gray-600">
-              3行のデータが検出されました
+              {previewData.length}名のデータが検出されました
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Column Mapping */}
-      {file && !importSuccess && (
-        <Card>
-          <CardHeader>
-            <CardTitle>列マッピング</CardTitle>
-            <CardDescription>
-              Excelの列とデータベースのフィールドの対応を確認
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="font-medium">列 A</span>
-                <span className="text-gray-500">→</span>
-                <Badge variant="secondary">選手名</Badge>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="font-medium">列 B</span>
-                <span className="text-gray-500">→</span>
-                <Badge variant="secondary">ラン 1</Badge>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="font-medium">列 C</span>
-                <span className="text-gray-500">→</span>
-                <Badge variant="secondary">ラン 2</Badge>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="font-medium">列 D</span>
-                <span className="text-gray-500">→</span>
-                <Badge variant="secondary">ラン 3</Badge>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="font-medium">列 E</span>
-                <span className="text-gray-500">→</span>
-                <Badge variant="secondary">ラン 4</Badge>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="font-medium">列 F</span>
-                <span className="text-gray-500">→</span>
-                <Badge variant="secondary">ラン 5</Badge>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Actions */}
-      {file && !importSuccess && (
+      {file && !importSuccess && previewData.length > 0 && (
         <div className="flex gap-3 justify-end">
           <Button variant="outline" onClick={handleRemoveFile}>
             キャンセル
           </Button>
           <Button onClick={handleImport} disabled={isImporting} size="lg">
-            <Upload className="mr-2 h-4 w-4" />
+            {isImporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
             {isImporting ? 'インポート中...' : 'インポート実行'}
           </Button>
         </div>
       )}
 
-      {/* Template Download */}
       <Card>
         <CardHeader>
           <CardTitle>テンプレートダウンロード</CardTitle>
@@ -287,5 +314,5 @@ export default function ImportPage() {
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

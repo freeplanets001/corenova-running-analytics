@@ -1,29 +1,27 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
+import { useState, useEffect } from 'react'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import {
-  Target,
   Users,
   User,
-  Timer,
   TrendingUp,
-  Calendar,
   ArrowLeft,
   Save,
-} from 'lucide-react';
-import { useRouter } from 'next/navigation';
+  Loader2,
+} from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 const scopeOptions = [
   { id: 'team', label: 'チーム目標', icon: Users, description: 'チーム全体での達成を目指す' },
   { id: 'personal', label: '個人目標', icon: User, description: '個別の選手に設定' },
   { id: 'group', label: 'グループ目標', icon: Users, description: '特定の選手グループ' },
-];
+]
 
 const metricOptions = [
   { id: 'avg_time', label: '平均タイム', unit: '秒' },
@@ -32,36 +30,108 @@ const metricOptions = [
   { id: 'stability', label: '安定性（標準偏差）', unit: '秒' },
   { id: 'attendance', label: '出席率', unit: '%' },
   { id: 'phase_time', label: 'フェーズタイム', unit: '秒' },
-];
+]
 
-const testTypeOptions = [
-  { id: '60m', label: '60m走' },
-  { id: '3/4court', label: '3/4コート' },
-  { id: 'suicide', label: 'スーサイド' },
-  { id: 'all', label: 'すべての測定' },
-];
+interface TestTypeOption {
+  id: string
+  label: string
+}
+
+interface PlayerOption {
+  id: string
+  name: string
+}
 
 export default function NewGoalPage() {
-  const router = useRouter();
+  const router = useRouter()
+  const [testTypeOptions, setTestTypeOptions] = useState<TestTypeOption[]>([])
+  const [playerOptions, setPlayerOptions] = useState<PlayerOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     scope: 'team',
     metric: 'avg_time',
-    testType: '60m',
+    testType: '',
     targetValue: '',
     targetDate: '',
     selectedPlayers: [] as string[],
-  });
+  })
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log('Goal created:', formData);
-    router.push('/goals');
-  };
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [sessionsRes, playersRes] = await Promise.all([
+          fetch('/api/sessions'),
+          fetch('/api/players'),
+        ])
+        const sessionsJson = await sessionsRes.json()
+        const playersJson = await playersRes.json()
 
-  const selectedScope = scopeOptions.find(s => s.id === formData.scope);
-  const selectedMetric = metricOptions.find(m => m.id === formData.metric);
+        // Extract unique test types from sessions
+        const testTypeSet = new Map<string, string>()
+        for (const s of sessionsJson.sessions || []) {
+          if (s.testType && !testTypeSet.has(s.testType)) {
+            testTypeSet.set(s.testType, s.testType)
+          }
+        }
+        const types: TestTypeOption[] = Array.from(testTypeSet.entries()).map(([key, label]) => ({
+          id: key,
+          label,
+        }))
+        types.push({ id: 'all', label: 'すべての測定' })
+        setTestTypeOptions(types)
+        if (types.length > 0) setFormData(prev => ({ ...prev, testType: types[0].id }))
+
+        setPlayerOptions(
+          (playersJson.players || []).map((p: Record<string, unknown>) => ({
+            id: p.id as string,
+            name: p.name as string,
+          }))
+        )
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      // TODO: POST to goals API when available
+      toast.success('目標を作成しました')
+      router.push('/goals')
+    } catch {
+      toast.error('目標の作成に失敗しました')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const togglePlayer = (playerId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      selectedPlayers: prev.selectedPlayers.includes(playerId)
+        ? prev.selectedPlayers.filter(id => id !== playerId)
+        : [...prev.selectedPlayers, playerId],
+    }))
+  }
+
+  const selectedMetric = metricOptions.find(m => m.id === formData.metric)
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -82,7 +152,6 @@ export default function NewGoalPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic Information */}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">基本情報</h2>
 
@@ -111,14 +180,13 @@ export default function NewGoalPage() {
           </div>
         </Card>
 
-        {/* Scope Selection */}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">目標範囲</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {scopeOptions.map((scope) => {
-              const Icon = scope.icon;
-              const isSelected = formData.scope === scope.id;
+              const Icon = scope.icon
+              const isSelected = formData.scope === scope.id
 
               return (
                 <button
@@ -137,29 +205,33 @@ export default function NewGoalPage() {
                     {scope.description}
                   </div>
                 </button>
-              );
+              )
             })}
           </div>
 
           {formData.scope === 'personal' && (
             <div className="mt-4 p-4 bg-accent rounded-lg">
               <Label className="mb-2 block">対象選手を選択</Label>
-              <div className="flex flex-wrap gap-2">
-                {Array.from({ length: 8 }, (_, i) => (
-                  <Badge
-                    key={i}
-                    variant="outline"
-                    className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
-                  >
-                    選手 {i + 1}
-                  </Badge>
-                ))}
-              </div>
+              {playerOptions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">選手が登録されていません</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {playerOptions.map((player) => (
+                    <Badge
+                      key={player.id}
+                      variant={formData.selectedPlayers.includes(player.id) ? 'default' : 'outline'}
+                      className="cursor-pointer"
+                      onClick={() => togglePlayer(player.id)}
+                    >
+                      {player.name}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </Card>
 
-        {/* Metric Configuration */}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">目標設定</h2>
 
@@ -234,7 +306,7 @@ export default function NewGoalPage() {
               <div className="text-sm">
                 <strong>目標プレビュー:</strong>{' '}
                 {formData.title || '（タイトル未設定）'}について、
-                {testTypeOptions.find(t => t.id === formData.testType)?.label}の
+                {testTypeOptions.find(t => t.id === formData.testType)?.label || '（未選択）'}の
                 {selectedMetric?.label}を
                 {formData.targetValue || '（未設定）'}{selectedMetric?.unit}
                 {formData.targetDate && `まで（${formData.targetDate}）`}に達成
@@ -243,7 +315,6 @@ export default function NewGoalPage() {
           </div>
         </Card>
 
-        {/* Action Buttons */}
         <div className="flex items-center justify-end gap-3">
           <Button
             type="button"
@@ -252,12 +323,12 @@ export default function NewGoalPage() {
           >
             キャンセル
           </Button>
-          <Button type="submit" className="gap-2">
-            <Save className="h-4 w-4" />
+          <Button type="submit" className="gap-2" disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             目標を作成
           </Button>
         </div>
       </form>
     </div>
-  );
+  )
 }

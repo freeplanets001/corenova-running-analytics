@@ -21,7 +21,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, email, display_name, player_name, jersey_number, position, role, is_active, created_at'
+        'id, email, display_name, player_name, jersey_number, position, role, is_active, created_at, height_cm, weight_kg, date_of_birth'
       )
       .order('created_at', { ascending: true })
 
@@ -44,12 +44,17 @@ export async function GET() {
   }
 }
 
+const ALLOWED_FIELDS = [
+  'display_name', 'player_name', 'jersey_number', 'position',
+  'role', 'is_active', 'height_cm', 'weight_kg', 'date_of_birth',
+] as const
+
 export async function PATCH(request: Request) {
   try {
     await requireRole('admin')
 
     const body = await request.json()
-    const { profileId, role } = body
+    const { profileId, ...fields } = body
 
     if (!profileId) {
       return NextResponse.json(
@@ -58,7 +63,23 @@ export async function PATCH(request: Request) {
       )
     }
 
-    if (!isValidRole(role)) {
+    // Build update object from allowed fields only
+    const updateData: Record<string, unknown> = {}
+    for (const key of ALLOWED_FIELDS) {
+      if (key in fields) {
+        updateData[key] = fields[key]
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { error: '更新するフィールドが指定されていません' },
+        { status: 400 }
+      )
+    }
+
+    // Validate role if provided
+    if ('role' in updateData && !isValidRole(updateData.role)) {
       return NextResponse.json(
         { error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}` },
         { status: 400 }
@@ -67,7 +88,7 @@ export async function PATCH(request: Request) {
 
     const { data, error } = await supabase
       .from('profiles')
-      .update({ role })
+      .update(updateData)
       .eq('id', profileId)
       .select()
       .single()
@@ -86,10 +107,12 @@ export async function PATCH(request: Request) {
       )
     }
 
-    // Sync role to auth app_metadata
-    await supabase.auth.admin.updateUserById(profileId, {
-      app_metadata: { role },
-    })
+    // Sync role to auth app_metadata if role was changed
+    if ('role' in updateData) {
+      await supabase.auth.admin.updateUserById(profileId, {
+        app_metadata: { role: updateData.role },
+      })
+    }
 
     return NextResponse.json({ member: data })
   } catch (error) {

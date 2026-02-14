@@ -72,7 +72,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Admin-only routes
-  const adminOnlyPaths = ['/settings/team', '/settings/members', '/settings/test-types', '/entry/bulk', '/entry/import']
+  const adminOnlyPaths = ['/settings/team', '/settings/members', '/settings/test-types', '/settings/ai', '/entry/bulk', '/entry/import', '/sessions/new', '/ai/reports']
   if (adminOnlyPaths.some((p) => path.startsWith(p)) && role !== 'admin') {
     const url = request.nextUrl.clone()
     url.pathname = '/overview'
@@ -80,7 +80,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Player or Admin routes (no viewer)
-  const noViewerPaths = ['/entry', '/ai/chat', '/goals/new']
+  const noViewerPaths = ['/entry', '/ai/chat', '/ai', '/goals/new', '/goals/suggestions']
   if (noViewerPaths.some((p) => path.startsWith(p)) && role === 'viewer') {
     const url = request.nextUrl.clone()
     url.pathname = '/overview'

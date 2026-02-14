@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireRole, ApiError } from '@/lib/utils/permissions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,6 +16,8 @@ function isValidRole(value: unknown): value is Role {
 
 export async function GET() {
   try {
+    await requireRole('admin')
+
     const { data, error } = await supabase
       .from('profiles')
       .select(
@@ -30,7 +33,10 @@ export async function GET() {
     }
 
     return NextResponse.json({ members: data })
-  } catch (err) {
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -40,6 +46,8 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    await requireRole('admin')
+
     const body = await request.json()
     const { profileId, role } = body
 
@@ -84,7 +92,10 @@ export async function PATCH(request: Request) {
     })
 
     return NextResponse.json({ member: data })
-  } catch (err) {
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -94,6 +105,8 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireRole('admin')
+
     const body = await request.json()
     const { playerName, jerseyNumber, position, role } = body
 
@@ -159,7 +172,10 @@ export async function POST(request: Request) {
       .single()
 
     return NextResponse.json({ member: profile })
-  } catch (err) {
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

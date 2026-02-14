@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Plus, Calendar, Users, MapPin, Loader2, Lock, Activity } from 'lucide-react'
 import Link from 'next/link'
+import { RoleGate } from '@/components/shared/role-gate'
 
 interface Session {
   id: string
@@ -62,12 +63,14 @@ export default function SessionsPage() {
             全{sessions.length}回の測定セッション
           </p>
         </div>
-        <Link href="/sessions/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            新規セッション
-          </Button>
-        </Link>
+        <RoleGate permission="createSession">
+          <Link href="/sessions/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              新規セッション
+            </Button>
+          </Link>
+        </RoleGate>
       </div>
 
       <div className="grid gap-4">
@@ -120,9 +123,11 @@ export default function SessionsPage() {
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-lg font-medium">セッションがありません</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              「新規セッション」ボタンから最初のセッションを作成しましょう
-            </p>
+            <RoleGate permission="createSession">
+              <p className="text-sm text-muted-foreground mt-1">
+                「新規セッション」ボタンから最初のセッションを作成しましょう
+              </p>
+            </RoleGate>
           </CardContent>
         </Card>
       )}

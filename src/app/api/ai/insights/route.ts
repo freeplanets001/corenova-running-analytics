@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireRole, ApiError } from '@/lib/utils/permissions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -79,20 +80,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Generate new insights using Gemini
+// POST: Generate new insights using Gemini (admin only)
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId } = body
-
-    if (!userId) {
-      return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-    }
-
-    const teamId = await getTeamId(userId)
-    if (!teamId) {
-      return NextResponse.json({ error: 'チームが見つかりません' }, { status: 404 })
-    }
+    const { teamId } = await requireRole('admin')
 
     const gemini = await getGeminiConfig(teamId)
     if (!gemini) {
@@ -256,6 +247,9 @@ ${JSON.stringify(sessionData, null, 2)}
 
     return NextResponse.json({ insights: savedInsights, generated: insightRows.length })
   } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('Insights POST error:', error)
     const errMsg = error instanceof Error ? error.message : 'インサイト生成に失敗しました'
     return NextResponse.json({ error: errMsg }, { status: 500 })

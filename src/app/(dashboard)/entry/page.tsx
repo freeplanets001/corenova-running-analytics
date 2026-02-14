@@ -3,9 +3,13 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { User, Users, FileSpreadsheet, QrCode, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/lib/hooks/use-auth';
+import { hasPermission } from '@/lib/constants/roles';
 
 export default function EntryPage() {
-  const entryModes = [
+  const { role } = useAuth();
+
+  const allEntryModes = [
     {
       id: 'individual',
       title: '個人入力',
@@ -39,6 +43,12 @@ export default function EntryPage() {
       color: 'text-orange-600'
     }
   ];
+
+  const entryModes = allEntryModes.filter(mode => {
+    if (mode.id === 'bulk') return hasPermission(role, 'bulkEntry');
+    if (mode.id === 'excel') return hasPermission(role, 'excelImport');
+    return true;
+  });
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireRole, ApiError } from '@/lib/utils/permissions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,22 +39,6 @@ async function getGeminiConfig(teamId: string) {
   }
 
   return null
-}
-
-async function getTeamId(userId: string): Promise<string | null> {
-  // Try team_members first
-  const { data: membership } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('profile_id', userId)
-    .limit(1)
-    .single()
-
-  if (membership) return membership.team_id
-
-  // Fallback: get first team
-  const { data: teams } = await supabase.from('teams').select('id').limit(1)
-  return teams?.[0]?.id || null
 }
 
 async function getTeamContext(teamId: string) {
@@ -115,19 +100,13 @@ ${sessionSummaries.join('\n') || 'セッションデータなし'}`
 
 export async function POST(request: NextRequest) {
   try {
+    const { userId, teamId } = await requireRole('admin', 'player')
+
     const body = await request.json()
-    const { message, conversationId, userId } = body
+    const { message, conversationId } = body
 
     if (!message?.trim()) {
       return NextResponse.json({ error: 'メッセージが必要です' }, { status: 400 })
-    }
-    if (!userId) {
-      return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-    }
-
-    const teamId = await getTeamId(userId)
-    if (!teamId) {
-      return NextResponse.json({ error: 'チームが見つかりません' }, { status: 404 })
     }
 
     const gemini = await getGeminiConfig(teamId)
@@ -233,6 +212,9 @@ ${teamContext}`
       conversationId: convId,
     })
   } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('AI Chat error:', error)
     const errMsg = error instanceof Error ? error.message : 'AI応答の生成中にエラーが発生しました'
     return NextResponse.json({ error: errMsg }, { status: 500 })

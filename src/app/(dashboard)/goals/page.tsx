@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Target, Plus } from 'lucide-react'
 import Link from 'next/link'
+import { RoleGate } from '@/components/shared/role-gate'
 
 export default function GoalsPage() {
   return (
@@ -15,12 +16,14 @@ export default function GoalsPage() {
             チームと個人の目標を設定・管理します
           </p>
         </div>
-        <Link href="/goals/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            目標を作成
-          </Button>
-        </Link>
+        <RoleGate allowedRoles={['admin', 'player']}>
+          <Link href="/goals/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              目標を作成
+            </Button>
+          </Link>
+        </RoleGate>
       </div>
 
       <Card>
@@ -31,12 +34,14 @@ export default function GoalsPage() {
             「目標を作成」ボタンから、チーム全体や個人の目標を設定できます。
             AI機能が有効な場合、データに基づいた目標提案も利用できます。
           </p>
-          <Link href="/goals/new">
-            <Button className="mt-6">
-              <Plus className="mr-2 h-4 w-4" />
-              最初の目標を設定する
-            </Button>
-          </Link>
+          <RoleGate allowedRoles={['admin', 'player']}>
+            <Link href="/goals/new">
+              <Button className="mt-6">
+                <Plus className="mr-2 h-4 w-4" />
+                最初の目標を設定する
+              </Button>
+            </Link>
+          </RoleGate>
         </CardContent>
       </Card>
     </div>

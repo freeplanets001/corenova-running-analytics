@@ -64,6 +64,7 @@ const navSections: NavSection[] = [
         label: 'データ入力',
         href: ROUTES.ENTRY,
         icon: ClipboardEdit,
+        allowedRoles: ['admin', 'player'],
       },
     ],
   },
@@ -79,6 +80,7 @@ const navSections: NavSection[] = [
         label: '目標',
         href: ROUTES.GOALS,
         icon: Target,
+        allowedRoles: ['admin', 'player'],
       },
     ],
   },
@@ -89,6 +91,7 @@ const navSections: NavSection[] = [
         label: 'AI アシスタント',
         href: ROUTES.AI,
         icon: Brain,
+        allowedRoles: ['admin', 'player'],
       },
       {
         label: 'ゲーミフィケーション',

@@ -66,11 +66,20 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
+  // Admin only
+  const { data: { user } } = await (await createServerClient()).auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (profile?.role !== 'admin') {
+    return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
   }
 
   // Get team

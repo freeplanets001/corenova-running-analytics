@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireRole, ApiError } from '@/lib/utils/permissions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -79,20 +80,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Generate a new report
+// POST: Generate a new report (admin only)
 export async function POST(request: NextRequest) {
   try {
+    const { teamId } = await requireRole('admin')
+
     const body = await request.json()
-    const { userId, reportType } = body
-
-    if (!userId) {
-      return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-    }
-
-    const teamId = await getTeamId(userId)
-    if (!teamId) {
-      return NextResponse.json({ error: 'チームが見つかりません' }, { status: 404 })
-    }
+    const { reportType } = body
 
     const gemini = await getGeminiConfig(teamId)
     if (!gemini) {
@@ -259,6 +253,9 @@ ${JSON.stringify(sessionSummaries, null, 2)}
 
     return NextResponse.json({ report: savedReport })
   } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('Report generation error:', error)
     const errMsg = error instanceof Error ? error.message : 'レポート生成に失敗しました'
     return NextResponse.json({ error: errMsg }, { status: 500 })

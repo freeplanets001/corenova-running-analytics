@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireRole, ApiError } from '@/lib/utils/permissions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,8 +37,15 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { userId, role, teamId } = await requireRole('admin', 'player')
+
     const body = await request.json()
-    const { title, description, scope, metric, testTypeId, targetValue, targetDate, playerId, createdBy } = body
+    const { title, description, scope, metric, testTypeId, targetValue, targetDate } = body
+
+    // Players can only create personal goals
+    if (role === 'player' && scope !== 'personal') {
+      return NextResponse.json({ error: '選手は個人目標のみ設定できます' }, { status: 403 })
+    }
 
     if (!title?.trim()) {
       return NextResponse.json({ error: 'タイトルは必須です' }, { status: 400 })
@@ -50,12 +58,6 @@ export async function POST(request: Request) {
     }
     if (!targetValue || !targetDate) {
       return NextResponse.json({ error: '目標値と期限は必須です' }, { status: 400 })
-    }
-
-    const { data: teams } = await supabase.from('teams').select('id').limit(1)
-    const teamId = teams?.[0]?.id
-    if (!teamId) {
-      return NextResponse.json({ error: 'チームが見つかりません' }, { status: 404 })
     }
 
     // Look up test type for unit/direction
@@ -82,8 +84,8 @@ export async function POST(request: Request) {
         scope,
         metric,
         test_type_id: testTypeId || null,
-        player_id: scope === 'personal' ? (playerId || null) : null,
-        created_by: createdBy,
+        player_id: scope === 'personal' ? (role === 'player' ? userId : (body.playerId || null)) : null,
+        created_by: userId,
         target_value: Number(targetValue),
         target_date: targetDate,
         unit,
@@ -100,6 +102,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ id: goal.id })
   } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('Goals POST error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

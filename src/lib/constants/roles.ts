@@ -26,6 +26,11 @@ export interface Permission {
   exportOwn: boolean
 }
 
+export function hasPermission(role: UserRole | null, permission: keyof Permission): boolean {
+  if (!role) return false
+  return ROLE_PERMISSIONS[role]?.[permission] ?? false
+}
+
 export const ROLE_PERMISSIONS: Record<UserRole, Permission> = {
   admin: {
     viewTeamDashboard: true,

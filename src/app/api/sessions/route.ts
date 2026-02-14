@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireRole, ApiError } from '@/lib/utils/permissions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,12 +62,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { teamId } = await requireRole('admin')
+
     const body = await request.json()
     const { date, location, notes } = body
-
-    const { data: teams } = await supabase.from('teams').select('id').limit(1)
-    const teamId = teams?.[0]?.id
-    if (!teamId) return NextResponse.json({ error: 'No team' }, { status: 404 })
 
     const { data: testType } = await supabase
       .from('test_types')
@@ -91,6 +90,9 @@ export async function POST(request: Request) {
     if (error) throw error
     return NextResponse.json({ id: session.id })
   } catch (error) {
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('Create session error:', error)
     return NextResponse.json({ error: 'Failed' }, { status: 500 })
   }

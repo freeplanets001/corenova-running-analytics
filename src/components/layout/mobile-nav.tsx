@@ -3,7 +3,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/hooks/use-auth'
 import { ROUTES } from '@/lib/constants/routes'
+import type { UserRole } from '@/types'
 import {
   LayoutDashboard,
   ClipboardEdit,
@@ -12,7 +14,14 @@ import {
   MoreHorizontal,
 } from 'lucide-react'
 
-const tabs = [
+interface MobileTab {
+  label: string
+  href: string
+  icon: typeof LayoutDashboard
+  allowedRoles?: UserRole[]
+}
+
+const tabs: MobileTab[] = [
   {
     label: '概要',
     href: ROUTES.OVERVIEW,
@@ -22,6 +31,7 @@ const tabs = [
     label: '入力',
     href: ROUTES.ENTRY,
     icon: ClipboardEdit,
+    allowedRoles: ['admin', 'player'],
   },
   {
     label: '分析',
@@ -32,6 +42,7 @@ const tabs = [
     label: '目標',
     href: ROUTES.GOALS,
     icon: Target,
+    allowedRoles: ['admin', 'player'],
   },
   {
     label: 'その他',
@@ -42,6 +53,7 @@ const tabs = [
 
 export function MobileNav() {
   const pathname = usePathname()
+  const { role } = useAuth()
 
   const isActive = (href: string) => {
     if (href === ROUTES.OVERVIEW) {
@@ -50,10 +62,16 @@ export function MobileNav() {
     return pathname.startsWith(href)
   }
 
+  const visibleTabs = tabs.filter(tab => {
+    if (!tab.allowedRoles) return true
+    if (!role) return false
+    return tab.allowedRoles.includes(role)
+  })
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t bg-background md:hidden">
       <div className="flex h-16 items-center justify-around">
-        {tabs.map((tab) => {
+        {visibleTabs.map((tab) => {
           const active = isActive(tab.href)
           return (
             <Link

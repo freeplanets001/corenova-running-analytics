@@ -15,14 +15,14 @@ export async function GET() {
     // Fetch team members
     const { data: members } = await supabase
       .from('team_members')
-      .select('user_id, role')
+      .select('profile_id, role')
       .eq('team_id', teamId)
 
     if (!members || members.length === 0) {
       return NextResponse.json({ players: [] })
     }
 
-    const memberIds = members.map(m => m.user_id)
+    const memberIds = members.map(m => m.profile_id)
 
     // Fetch profiles for team members
     const { data: profiles } = await supabase
@@ -50,7 +50,7 @@ export async function GET() {
       playerStats.set(r.player_id, existing)
     }
 
-    const memberRoleMap = new Map(members.map(m => [m.user_id, m.role]))
+    const memberRoleMap = new Map(members.map(m => [m.profile_id, m.role]))
 
     const players = profiles.map(p => {
       const stats = playerStats.get(p.id)

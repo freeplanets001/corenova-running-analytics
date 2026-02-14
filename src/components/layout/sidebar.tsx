@@ -109,11 +109,13 @@ const navSections: NavSection[] = [
         label: 'メンバー管理',
         href: ROUTES.SETTINGS_MEMBERS,
         icon: Shield,
+        allowedRoles: ['admin'],
       },
       {
         label: 'AI設定',
         href: ROUTES.SETTINGS_AI,
         icon: Brain,
+        allowedRoles: ['admin'],
       },
     ],
   },

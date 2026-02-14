@@ -78,6 +78,11 @@ export async function PATCH(request: Request) {
       )
     }
 
+    // Sync role to auth app_metadata
+    await supabase.auth.admin.updateUserById(profileId, {
+      app_metadata: { role },
+    })
+
     return NextResponse.json({ member: data })
   } catch (err) {
     return NextResponse.json(

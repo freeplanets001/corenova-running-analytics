@@ -52,6 +52,11 @@ export async function GET(request: Request) {
             locale: 'ja',
           })
 
+          // Set role in auth app_metadata
+          await supabaseAdmin.auth.admin.updateUserById(user.id, {
+            app_metadata: { role: 'player' },
+          })
+
           // Reassign all session_runs from old player to new user
           await supabaseAdmin
             .from('session_runs')
@@ -98,6 +103,11 @@ export async function GET(request: Request) {
             role: 'viewer',
             is_active: true,
             locale: 'ja',
+          })
+
+          // Set role in auth app_metadata
+          await supabaseAdmin.auth.admin.updateUserById(user.id, {
+            app_metadata: { role: 'viewer' },
           })
 
           // Add to team as viewer

@@ -1,83 +1,93 @@
-'use client';
+'use client'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { FileText, Download, Calendar, Sparkles, TrendingUp, Eye } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { FileText, Calendar, Sparkles, Loader2, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import { useAuth } from '@/lib/hooks/use-auth'
+import { toast } from 'sonner'
+
+interface Report {
+  id: string
+  insight_type: string
+  title: string
+  content: string
+  summary: string | null
+  created_at: string
+  model_used: string | null
+}
 
 export default function AIReportsPage() {
-  const reports = [
-    {
-      id: 1,
-      title: '2月第2週 週次パフォーマンスレポート',
-      type: 'weekly',
-      date: '2024-02-11',
-      status: 'ready',
-      highlights: [
-        '垂直跳び: 平均65cm (+3.2cm)',
-        'シャトルラン: 平均85回 (+5回)',
-        '参加セッション: 3回'
-      ]
-    },
-    {
-      id: 2,
-      title: '2月第1週 週次パフォーマンスレポート',
-      type: 'weekly',
-      date: '2024-02-04',
-      status: 'ready',
-      highlights: [
-        '垂直跳び: 平均62cm (+1.5cm)',
-        'スプリント: 平均3.2秒 (-0.1秒)',
-        '参加セッション: 2回'
-      ]
-    },
-    {
-      id: 3,
-      title: '1月 月次総合レポート',
-      type: 'monthly',
-      date: '2024-02-01',
-      status: 'ready',
-      highlights: [
-        '総セッション参加: 8回',
-        '自己ベスト更新: 4項目',
-        '新規バッジ獲得: 2個'
-      ]
-    },
-    {
-      id: 4,
-      title: '1月第4週 週次パフォーマンスレポート',
-      type: 'weekly',
-      date: '2024-01-28',
-      status: 'ready',
-      highlights: [
-        '垂直跳び: 平均60cm (+2.0cm)',
-        'プランク: 平均120秒 (+15秒)',
-        '参加セッション: 2回'
-      ]
-    },
-    {
-      id: 5,
-      title: '2月第3週 週次パフォーマンスレポート',
-      type: 'weekly',
-      date: '2024-02-18',
-      status: 'pending',
-      highlights: []
+  const { user } = useAuth()
+  const [reports, setReports] = useState<Report[]>([])
+  const [loading, setLoading] = useState(true)
+  const [generatingWeekly, setGeneratingWeekly] = useState(false)
+  const [generatingMonthly, setGeneratingMonthly] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    fetchReports()
+  }, [user])
+
+  const fetchReports = async () => {
+    if (!user) return
+    try {
+      const res = await fetch(`/api/ai/reports?userId=${user.id}`)
+      const data = await res.json()
+      setReports(data.reports || [])
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false)
     }
-  ];
+  }
+
+  const handleGenerate = async (type: 'weekly' | 'monthly') => {
+    if (!user) return
+    const setter = type === 'weekly' ? setGeneratingWeekly : setGeneratingMonthly
+    setter(true)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/ai/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, reportType: type }),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || 'レポート生成に失敗しました')
+        return
+      }
+
+      toast.success(`${type === 'weekly' ? '週次' : '月次'}レポートを生成しました`)
+      fetchReports()
+      if (data.report?.id) setExpandedId(data.report.id)
+    } catch {
+      toast.error('エラーが発生しました')
+    } finally {
+      setter(false)
+    }
+  }
 
   const getTypeBadge = (type: string) => {
-    if (type === 'weekly') {
-      return <Badge variant="default">週次</Badge>;
+    if (type === 'weekly_report') {
+      return <Badge variant="default">週次</Badge>
     }
-    return <Badge variant="secondary">月次</Badge>;
-  };
+    return <Badge variant="secondary">月次</Badge>
+  }
 
-  const getStatusBadge = (status: string) => {
-    if (status === 'ready') {
-      return <Badge variant="outline" className="border-green-500 text-green-700">生成済み</Badge>;
-    }
-    return <Badge variant="outline" className="border-orange-500 text-orange-700">生成中</Badge>;
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -95,139 +105,156 @@ export default function AIReportsPage() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{reports.filter(r => r.status === 'ready').length}</div>
+            <div className="text-2xl font-bold">{reports.length}</div>
             <p className="text-xs text-muted-foreground">生成済みレポート</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">今月のレポート</CardTitle>
+            <CardTitle className="text-sm font-medium">週次レポート</CardTitle>
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {reports.filter(r => r.date.startsWith('2024-02')).length}
+              {reports.filter(r => r.insight_type === 'weekly_report').length}
             </div>
-            <p className="text-xs text-muted-foreground">2月生成分</p>
+            <p className="text-xs text-muted-foreground">生成済み</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">次回生成</CardTitle>
+            <CardTitle className="text-sm font-medium">月次レポート</CardTitle>
             <Sparkles className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">2月18日</div>
-            <p className="text-xs text-muted-foreground">週次レポート予定</p>
+            <div className="text-2xl font-bold">
+              {reports.filter(r => r.insight_type === 'monthly_report').length}
+            </div>
+            <p className="text-xs text-muted-foreground">生成済み</p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Generate buttons */}
+      <div className="flex gap-3">
+        <Button
+          onClick={() => handleGenerate('weekly')}
+          disabled={generatingWeekly || generatingMonthly}
+        >
+          {generatingWeekly ? (
+            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />生成中...</>
+          ) : (
+            <><Sparkles className="mr-2 h-4 w-4" />週次レポートを生成</>
+          )}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => handleGenerate('monthly')}
+          disabled={generatingWeekly || generatingMonthly}
+        >
+          {generatingMonthly ? (
+            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />生成中...</>
+          ) : (
+            <><Sparkles className="mr-2 h-4 w-4" />月次レポートを生成</>
+          )}
+        </Button>
+      </div>
+
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="flex items-center gap-3 py-4">
+            <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+            <p className="text-sm text-red-800">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Reports list */}
+      <div>
+        <h2 className="text-xl font-semibold mb-4">レポート一覧</h2>
+        {reports.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">
+                レポートがまだありません。上のボタンからレポートを生成してください。
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                ※ AI設定ページでGemini APIキーが設定されている必要があります
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {reports.map((report) => {
+              const isExpanded = expandedId === report.id
+              return (
+                <Card key={report.id}>
+                  <CardHeader
+                    className="cursor-pointer"
+                    onClick={() => setExpandedId(isExpanded ? null : report.id)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-2 flex-1">
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-lg">{report.title}</CardTitle>
+                          {getTypeBadge(report.insight_type)}
+                        </div>
+                        <CardDescription className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          {new Date(report.created_at).toLocaleDateString('ja-JP', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </CardDescription>
+                        {report.summary && (
+                          <p className="text-sm text-muted-foreground">{report.summary}</p>
+                        )}
+                      </div>
+                      {isExpanded ? (
+                        <ChevronUp className="h-5 w-5 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" />
+                      )}
+                    </div>
+                  </CardHeader>
+                  {isExpanded && (
+                    <CardContent>
+                      <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap">
+                        {report.content}
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-blue-50">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-purple-600" />
-            自動レポート生成について
+            レポート生成について
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            CONEROVAは毎週月曜日と毎月1日に自動的にパフォーマンスレポートを生成します。
-            レポートには以下の内容が含まれます：
+            レポートはチームのセッションデータに基づいてAIが自動生成します。
           </p>
           <ul className="list-disc list-inside space-y-1 ml-2">
-            <li>期間内の測定データサマリー</li>
-            <li>前期間との比較分析</li>
-            <li>パフォーマンストレンド</li>
-            <li>改善提案とアドバイス</li>
-            <li>達成した目標やバッジ</li>
+            <li>週次レポート: 過去7日間のデータを分析</li>
+            <li>月次レポート: 過去1ヶ月のデータを分析</li>
+            <li>選手別の成績比較・トレンド分析・改善提案を含みます</li>
           </ul>
         </CardContent>
       </Card>
-
-      <div>
-        <h2 className="text-xl font-semibold mb-4">レポート一覧</h2>
-        <div className="space-y-3">
-          {reports.map((report) => (
-            <Card key={report.id} className={report.status === 'pending' ? 'opacity-60' : ''}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-lg">{report.title}</CardTitle>
-                      {getTypeBadge(report.type)}
-                      {getStatusBadge(report.status)}
-                    </div>
-                    <CardDescription className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      {report.date}
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              {report.status === 'ready' && (
-                <CardContent className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium mb-2 flex items-center gap-1">
-                      <TrendingUp className="h-4 w-4" />
-                      ハイライト
-                    </p>
-                    <ul className="space-y-1 text-sm text-muted-foreground">
-                      {report.highlights.map((highlight, index) => (
-                        <li key={index} className="flex items-start gap-2">
-                          <span className="text-blue-600">•</span>
-                          {highlight}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" className="flex-1">
-                      <Eye className="mr-2 h-4 w-4" />
-                      レポートを開く
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <Download className="mr-2 h-4 w-4" />
-                      PDF
-                    </Button>
-                  </div>
-                </CardContent>
-              )}
-              {report.status === 'pending' && (
-                <CardContent>
-                  <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
-                    <Sparkles className="mr-2 h-4 w-4 animate-pulse" />
-                    レポートは期間終了後に自動生成されます
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>レポートのカスタマイズ</CardTitle>
-          <CardDescription>レポート生成の設定を変更します（近日公開予定）</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="p-4 rounded-lg border bg-muted/50">
-            <p className="text-sm font-medium mb-1">週次レポートの曜日</p>
-            <p className="text-xs text-muted-foreground">毎週月曜日（変更不可）</p>
-          </div>
-          <div className="p-4 rounded-lg border bg-muted/50">
-            <p className="text-sm font-medium mb-1">含める項目</p>
-            <p className="text-xs text-muted-foreground">すべての測定データ（カスタマイズ機能は開発中）</p>
-          </div>
-          <div className="p-4 rounded-lg border bg-muted/50">
-            <p className="text-sm font-medium mb-1">共有設定</p>
-            <p className="text-xs text-muted-foreground">自分のみ閲覧可（共有機能は開発中）</p>
-          </div>
-        </CardContent>
-      </Card>
     </div>
-  );
+  )
 }

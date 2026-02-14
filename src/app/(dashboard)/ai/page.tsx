@@ -1,55 +1,112 @@
-'use client';
+'use client'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Sparkles, MessageCircle, FileText, TrendingUp, Lightbulb, ArrowRight } from 'lucide-react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Sparkles, MessageCircle, FileText, TrendingUp, Lightbulb, ArrowRight, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
+import { useAuth } from '@/lib/hooks/use-auth'
+import { toast } from 'sonner'
+
+interface Insight {
+  id: string
+  insight_type: string
+  title: string
+  content: string
+  summary: string | null
+  severity: string
+  created_at: string
+  is_read: boolean
+  is_pinned: boolean
+}
+
+const severityIcon: Record<string, typeof TrendingUp> = {
+  positive: TrendingUp,
+  info: Sparkles,
+  warning: AlertCircle,
+}
+
+const aiFeatures = [
+  {
+    title: 'AIチャット',
+    description: 'データについて質問し、AIから即座に回答を得られます',
+    href: '/ai/chat',
+    icon: MessageCircle,
+    color: 'text-blue-600',
+  },
+  {
+    title: 'AIレポート',
+    description: '週次・月次のパフォーマンスレポートを自動生成します',
+    href: '/ai/reports',
+    icon: FileText,
+    color: 'text-green-600',
+  },
+]
+
+function timeAgo(dateStr: string): string {
+  const now = new Date()
+  const date = new Date(dateStr)
+  const diffMs = now.getTime() - date.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return 'たった今'
+  if (diffMin < 60) return `${diffMin}分前`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour}時間前`
+  const diffDay = Math.floor(diffHour / 24)
+  if (diffDay < 7) return `${diffDay}日前`
+  return date.toLocaleDateString('ja-JP')
+}
 
 export default function AIPage() {
-  const mockInsights = [
-    {
-      id: 1,
-      title: '垂直跳びのパフォーマンス向上が見られます',
-      description: '先月と比較して平均3.2cm向上しています。この調子でトレーニングを継続しましょう。',
-      type: 'positive',
-      timestamp: '2時間前',
-      icon: TrendingUp
-    },
-    {
-      id: 2,
-      title: 'スプリントタイムの改善余地があります',
-      description: 'チーム平均と比較して0.5秒遅れています。加速フェーズの改善に焦点を当てることをお勧めします。',
-      type: 'suggestion',
-      timestamp: '5時間前',
-      icon: Lightbulb
-    },
-    {
-      id: 3,
-      title: '週次トレーニングパターンを分析しました',
-      description: '火曜日と木曜日のトレーニング後にパフォーマンスの向上が見られます。',
-      type: 'insight',
-      timestamp: '1日前',
-      icon: Sparkles
-    }
-  ];
+  const { user } = useAuth()
+  const [insights, setInsights] = useState<Insight[]>([])
+  const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState(false)
 
-  const aiFeatures = [
-    {
-      title: 'AIチャット',
-      description: 'データについて質問し、AIから即座に回答を得られます',
-      href: '/ai/chat',
-      icon: MessageCircle,
-      color: 'text-blue-600'
-    },
-    {
-      title: 'AIレポート',
-      description: '週次・月次のパフォーマンスレポートを自動生成します',
-      href: '/ai/reports',
-      icon: FileText,
-      color: 'text-green-600'
+  useEffect(() => {
+    if (!user) return
+    fetchInsights()
+  }, [user])
+
+  const fetchInsights = async () => {
+    if (!user) return
+    try {
+      const res = await fetch(`/api/ai/insights?userId=${user.id}`)
+      const data = await res.json()
+      setInsights(data.insights || [])
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false)
     }
-  ];
+  }
+
+  const handleGenerate = async () => {
+    if (!user) return
+    setGenerating(true)
+    try {
+      const res = await fetch('/api/ai/insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'インサイト生成に失敗しました')
+        return
+      }
+      setInsights(data.insights || [])
+      toast.success(`${data.generated}件のインサイトを生成しました`)
+    } catch {
+      toast.error('エラーが発生しました')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  // Filter out reports from insights
+  const displayInsights = insights.filter(i => i.insight_type !== 'weekly_report' && i.insight_type !== 'monthly_report')
 
   return (
     <div className="space-y-6">
@@ -62,7 +119,7 @@ export default function AIPage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         {aiFeatures.map((feature) => {
-          const Icon = feature.icon;
+          const Icon = feature.icon
           return (
             <Link key={feature.title} href={feature.href}>
               <Card className="hover:shadow-lg transition-all cursor-pointer group">
@@ -82,41 +139,74 @@ export default function AIPage() {
                 </CardHeader>
               </Card>
             </Link>
-          );
+          )
         })}
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">最新のインサイト</h2>
-          <Button variant="outline" size="sm">すべて表示</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleGenerate}
+            disabled={generating}
+          >
+            {generating ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />生成中...</>
+            ) : (
+              <><RefreshCw className="mr-2 h-4 w-4" />新しいインサイトを生成</>
+            )}
+          </Button>
         </div>
 
-        <div className="space-y-4">
-          {mockInsights.map((insight) => {
-            const Icon = insight.icon;
-            return (
-              <Card key={insight.id}>
-                <CardHeader>
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <CardTitle className="text-base">{insight.title}</CardTitle>
-                        <Badge variant="secondary" className="text-xs">
-                          {insight.timestamp}
-                        </Badge>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : displayInsights.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Sparkles className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">
+                インサイトがまだありません。「新しいインサイトを生成」ボタンをクリックしてAIに分析させましょう。
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                ※ AI設定ページでGemini APIキーが設定されている必要があります
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {displayInsights.map((insight) => {
+              const Icon = severityIcon[insight.severity] || Lightbulb
+              return (
+                <Card key={insight.id}>
+                  <CardHeader>
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-lg ${
+                        insight.severity === 'positive' ? 'bg-green-100 text-green-600' :
+                        insight.severity === 'warning' ? 'bg-amber-100 text-amber-600' :
+                        'bg-gradient-to-br from-purple-500 to-blue-500 text-white'
+                      }`}>
+                        <Icon className="h-5 w-5" />
                       </div>
-                      <CardDescription>{insight.description}</CardDescription>
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <CardTitle className="text-base">{insight.title}</CardTitle>
+                          <Badge variant="secondary" className="text-xs shrink-0">
+                            {timeAgo(insight.created_at)}
+                          </Badge>
+                        </div>
+                        <CardDescription className="whitespace-pre-wrap">{insight.content}</CardDescription>
+                      </div>
                     </div>
-                  </div>
-                </CardHeader>
-              </Card>
-            );
-          })}
-        </div>
+                  </CardHeader>
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-blue-50">
@@ -128,7 +218,7 @@ export default function AIPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <p className="text-muted-foreground">
-            CONEROVAのAI機能は、Google Gemini APIを活用して、あなたのパフォーマンスデータを深く分析します。
+            CONEROVAのAI機能は、Google Gemini APIを活用して、パフォーマンスデータを深く分析します。
           </p>
           <ul className="list-disc list-inside space-y-1 text-muted-foreground ml-2">
             <li>リアルタイムでデータを分析し、改善提案を提供</li>
@@ -139,5 +229,5 @@ export default function AIPage() {
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

@@ -1,0 +1,215 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+async function getGeminiClient(teamId: string) {
+  const { data: settings } = await supabase
+    .from('api_settings')
+    .select('api_key_encrypted, model_name')
+    .eq('team_id', teamId)
+    .eq('provider', 'gemini')
+    .eq('is_configured', true)
+    .single()
+
+  if (!settings?.api_key_encrypted) return null
+
+  const { GoogleGenAI } = await import('@google/genai')
+  return {
+    ai: new GoogleGenAI({ apiKey: settings.api_key_encrypted }),
+    model: settings.model_name || 'gemini-2.0-flash',
+  }
+}
+
+async function getTeamContext(teamId: string) {
+  // Fetch recent sessions with stats
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('id, session_date, test_type_id, notes, location')
+    .eq('team_id', teamId)
+    .order('session_date', { ascending: false })
+    .limit(10)
+
+  const { data: testTypes } = await supabase
+    .from('test_types')
+    .select('id, name, unit, direction')
+    .eq('team_id', teamId)
+
+  const { data: players } = await supabase
+    .from('team_members')
+    .select('profile_id, role, profiles!team_members_profile_id_fkey(display_name, player_name)')
+    .eq('team_id', teamId)
+
+  // Fetch recent runs
+  const sessionIds = sessions?.map(s => s.id) || []
+  let runs: { session_id: string; player_id: string; value: number; run_number: number }[] = []
+  if (sessionIds.length > 0) {
+    const { data } = await supabase
+      .from('session_runs')
+      .select('session_id, player_id, value, run_number')
+      .in('session_id', sessionIds)
+      .eq('is_valid', true)
+    runs = data || []
+  }
+
+  const testTypeMap = new Map(testTypes?.map(t => [t.id, t]) || [])
+
+  const sessionSummaries = (sessions || []).map(s => {
+    const sessionRuns = runs.filter(r => r.session_id === s.id)
+    const values = sessionRuns.map(r => r.value)
+    const avg = values.length > 0 ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2) : 'N/A'
+    const best = values.length > 0 ? Math.min(...values).toFixed(2) : 'N/A'
+    const tt = testTypeMap.get(s.test_type_id)
+    return `- ${s.session_date}: ${tt?.name || '不明'}（${tt?.unit || '秒'}）選手${new Set(sessionRuns.map(r => r.player_id)).size}名, ${sessionRuns.length}本, 平均${avg}, ベスト${best}`
+  })
+
+  const playerNames = (players || []).map(p => {
+    const profile = p.profiles as unknown as { display_name: string; player_name: string | null }
+    return profile?.player_name || profile?.display_name || '不明'
+  })
+
+  return `## チームデータコンテキスト
+
+### 登録選手 (${playerNames.length}名)
+${playerNames.join(', ')}
+
+### 測定種目
+${(testTypes || []).map(t => `- ${t.name}（${t.unit}、${t.direction === 'decrease' ? '低い方が良い' : '高い方が良い'}）`).join('\n')}
+
+### 直近のセッション
+${sessionSummaries.join('\n') || 'セッションデータなし'}`
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { message, conversationId, userId } = body
+
+    if (!message?.trim()) {
+      return NextResponse.json({ error: 'メッセージが必要です' }, { status: 400 })
+    }
+    if (!userId) {
+      return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+    }
+
+    // Get team
+    const { data: membership } = await supabase
+      .from('team_members')
+      .select('team_id')
+      .eq('profile_id', userId)
+      .limit(1)
+      .single()
+
+    if (!membership) {
+      return NextResponse.json({ error: 'チームに所属していません' }, { status: 403 })
+    }
+
+    const teamId = membership.team_id
+
+    // Get Gemini client
+    const gemini = await getGeminiClient(teamId)
+    if (!gemini) {
+      return NextResponse.json({
+        error: 'AI機能が設定されていません。管理者がAI設定ページでAPIキーを設定してください。',
+      }, { status: 400 })
+    }
+
+    // Get or create conversation
+    let convId = conversationId
+    if (!convId) {
+      const { data: conv } = await supabase
+        .from('ai_conversations')
+        .insert({ team_id: teamId, user_id: userId, title: message.slice(0, 50) })
+        .select('id')
+        .single()
+      convId = conv?.id
+    }
+
+    // Save user message
+    if (convId) {
+      await supabase.from('ai_chat_messages').insert({
+        conversation_id: convId,
+        role: 'user',
+        content: message,
+      })
+    }
+
+    // Get previous messages for context
+    let chatHistory: { role: string; content: string }[] = []
+    if (convId) {
+      const { data: prevMessages } = await supabase
+        .from('ai_chat_messages')
+        .select('role, content')
+        .eq('conversation_id', convId)
+        .order('created_at', { ascending: true })
+        .limit(20)
+      chatHistory = (prevMessages || []).filter(m => m.role !== 'system')
+    }
+
+    // Build context
+    const teamContext = await getTeamContext(teamId)
+
+    const systemPrompt = `あなたはCOREONVAランニング分析アプリのAIアシスタントです。
+バスケットボールチームのランニングセッション（走行タイム測定）データを分析し、
+選手やコーチに有益なアドバイスを提供します。
+
+以下のルール:
+- 日本語で回答してください
+- データに基づいた具体的なアドバイスを提供してください
+- 数値は適切に丸めてください
+- マークダウン形式で回答してください
+- 選手の名前は実際のデータに含まれるものだけ使ってください
+- データがない場合は、推測せず「データがまだ不足しています」と伝えてください
+
+${teamContext}`
+
+    // Build conversation for Gemini
+    const contents = [
+      { role: 'user' as const, parts: [{ text: systemPrompt + '\n\n以上がシステム設定です。これからのユーザーの質問に回答してください。' }] },
+      { role: 'model' as const, parts: [{ text: 'はい、CONEROVAのAIアシスタントとして、チームのランニングデータに基づいてお答えします。何でもお聞きください。' }] },
+    ]
+
+    // Add previous chat history (skip last message which is the current one we just saved)
+    for (const msg of chatHistory.slice(0, -1)) {
+      contents.push({
+        role: msg.role === 'user' ? 'user' as const : 'model' as const,
+        parts: [{ text: msg.content }],
+      })
+    }
+
+    // Add current message
+    contents.push({ role: 'user' as const, parts: [{ text: message }] })
+
+    // Call Gemini
+    const response = await gemini.ai.models.generateContent({
+      model: gemini.model,
+      contents,
+    })
+
+    const aiResponse = response.text || 'すみません、回答を生成できませんでした。'
+
+    // Save AI response
+    if (convId) {
+      await supabase.from('ai_chat_messages').insert({
+        conversation_id: convId,
+        role: 'assistant',
+        content: aiResponse,
+        tokens_used: response.usageMetadata?.totalTokenCount || null,
+      })
+    }
+
+    return NextResponse.json({
+      response: aiResponse,
+      conversationId: convId,
+    })
+  } catch (error) {
+    console.error('AI Chat error:', error)
+    return NextResponse.json(
+      { error: 'AI応答の生成中にエラーが発生しました' },
+      { status: 500 }
+    )
+  }
+}

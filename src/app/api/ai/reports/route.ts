@@ -6,31 +6,73 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// GET: Fetch generated reports (stored as ai_insights with type weekly_report/monthly_report)
+async function getGeminiConfig(teamId: string) {
+  if (process.env.GEMINI_API_KEY) {
+    const { GoogleGenAI } = await import('@google/genai')
+    return {
+      ai: new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }),
+      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+    }
+  }
+
+  try {
+    const { data: settings } = await supabase
+      .from('api_settings')
+      .select('api_key_encrypted, model_name')
+      .eq('team_id', teamId)
+      .eq('provider', 'gemini')
+      .eq('is_configured', true)
+      .single()
+
+    if (settings?.api_key_encrypted) {
+      const { GoogleGenAI } = await import('@google/genai')
+      return {
+        ai: new GoogleGenAI({ apiKey: settings.api_key_encrypted }),
+        model: settings.model_name || 'gemini-2.0-flash',
+      }
+    }
+  } catch {
+    // api_settings table may not exist
+  }
+  return null
+}
+
+async function getTeamId(userId: string): Promise<string | null> {
+  const { data: membership } = await supabase
+    .from('team_members')
+    .select('team_id')
+    .eq('profile_id', userId)
+    .limit(1)
+    .single()
+  if (membership) return membership.team_id
+
+  const { data: teams } = await supabase.from('teams').select('id').limit(1)
+  return teams?.[0]?.id || null
+}
+
+// GET: Fetch generated reports
 export async function GET(request: NextRequest) {
   try {
     const userId = request.nextUrl.searchParams.get('userId')
     if (!userId) return NextResponse.json({ reports: [] })
 
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('profile_id', userId)
-      .limit(1)
-      .single()
+    const teamId = await getTeamId(userId)
+    if (!teamId) return NextResponse.json({ reports: [] })
 
-    if (!membership) return NextResponse.json({ reports: [] })
+    try {
+      const { data: reports } = await supabase
+        .from('ai_insights')
+        .select('id, insight_type, title, content, summary, severity, created_at, is_read, model_used')
+        .eq('team_id', teamId)
+        .in('insight_type', ['weekly_report', 'monthly_report'])
+        .eq('is_dismissed', false)
+        .order('created_at', { ascending: false })
+        .limit(20)
 
-    const { data: reports } = await supabase
-      .from('ai_insights')
-      .select('id, insight_type, title, content, summary, severity, created_at, is_read, model_used')
-      .eq('team_id', membership.team_id)
-      .in('insight_type', ['weekly_report', 'monthly_report'])
-      .eq('is_dismissed', false)
-      .order('created_at', { ascending: false })
-      .limit(20)
-
-    return NextResponse.json({ reports: reports || [] })
+      return NextResponse.json({ reports: reports || [] })
+    } catch {
+      return NextResponse.json({ reports: [] })
+    }
   } catch (error) {
     console.error('Reports GET error:', error)
     return NextResponse.json({ reports: [] }, { status: 500 })
@@ -41,43 +83,23 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, reportType } = body // reportType: 'weekly' or 'monthly'
+    const { userId, reportType } = body
 
     if (!userId) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
     }
 
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('profile_id', userId)
-      .limit(1)
-      .single()
-
-    if (!membership) {
-      return NextResponse.json({ error: 'チームに所属していません' }, { status: 403 })
+    const teamId = await getTeamId(userId)
+    if (!teamId) {
+      return NextResponse.json({ error: 'チームが見つかりません' }, { status: 404 })
     }
 
-    const teamId = membership.team_id
-
-    // Get Gemini
-    const { data: settings } = await supabase
-      .from('api_settings')
-      .select('api_key_encrypted, model_name')
-      .eq('team_id', teamId)
-      .eq('provider', 'gemini')
-      .eq('is_configured', true)
-      .single()
-
-    if (!settings?.api_key_encrypted) {
+    const gemini = await getGeminiConfig(teamId)
+    if (!gemini) {
       return NextResponse.json({
-        error: 'AI機能が設定されていません。管理者がAI設定でAPIキーを設定してください。',
+        error: 'AI機能が設定されていません。管理者がAI設定ページでAPIキーを設定するか、環境変数GEMINI_API_KEYを設定してください。',
       }, { status: 400 })
     }
-
-    const { GoogleGenAI } = await import('@google/genai')
-    const ai = new GoogleGenAI({ apiKey: settings.api_key_encrypted })
-    const model = settings.model_name || 'gemini-2.0-flash'
 
     // Determine date range
     const now = new Date()
@@ -90,7 +112,6 @@ export async function POST(request: NextRequest) {
     }
     const startDateStr = startDate.toISOString().split('T')[0]
 
-    // Gather data for the period
     const { data: sessions } = await supabase
       .from('sessions')
       .select('id, session_date, test_type_id, notes')
@@ -127,7 +148,6 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    // Build session summaries
     const sessionSummaries = (sessions || []).map(s => {
       const sRuns = runs.filter(r => r.session_id === s.id)
       const tt = testTypeMap.get(s.test_type_id)
@@ -199,30 +219,48 @@ ${JSON.stringify(sessionSummaries, null, 2)}
 - 具体的な数値を含めてください
 - ポジティブな点と改善点の両方を含めてください`
 
-    const response = await ai.models.generateContent({ model, contents: prompt })
+    const response = await gemini.ai.models.generateContent({ model: gemini.model, contents: prompt })
     const reportContent = response.text || 'レポートの生成に失敗しました。'
 
-    // Save as ai_insight
     const insightType = isMonthly ? 'monthly_report' : 'weekly_report'
-    const { data: saved } = await supabase
-      .from('ai_insights')
-      .insert({
-        team_id: teamId,
-        insight_type: insightType,
-        title: `${periodLabel}パフォーマンスレポート（${dateRange}）`,
-        content: reportContent,
-        summary: `${sessionSummaries.length}セッション、${runs.length}本のデータに基づくレポート`,
-        severity: 'info',
-        model_used: model,
-        prompt_tokens: response.usageMetadata?.promptTokenCount || null,
-        completion_tokens: response.usageMetadata?.candidatesTokenCount || null,
-      })
-      .select('id, title, content, created_at, insight_type')
-      .single()
+    const reportTitle = `${periodLabel}パフォーマンスレポート（${dateRange}）`
+    const reportSummary = `${sessionSummaries.length}セッション、${runs.length}本のデータに基づくレポート`
 
-    return NextResponse.json({ report: saved })
+    // Try to save to DB
+    let savedReport: { id: string; title: string; content: string; created_at: string; insight_type: string; summary: string | null } | null = null
+    try {
+      const { data: saved } = await supabase
+        .from('ai_insights')
+        .insert({
+          team_id: teamId,
+          insight_type: insightType,
+          title: reportTitle,
+          content: reportContent,
+          summary: reportSummary,
+          severity: 'info',
+          model_used: gemini.model,
+          prompt_tokens: response.usageMetadata?.promptTokenCount || null,
+          completion_tokens: response.usageMetadata?.candidatesTokenCount || null,
+        })
+        .select('id, title, content, created_at, insight_type, summary')
+        .single()
+      savedReport = saved
+    } catch {
+      // ai_insights table may not exist
+      savedReport = {
+        id: `temp-${Date.now()}`,
+        title: reportTitle,
+        content: reportContent,
+        created_at: new Date().toISOString(),
+        insight_type: insightType,
+        summary: reportSummary,
+      }
+    }
+
+    return NextResponse.json({ report: savedReport })
   } catch (error) {
     console.error('Report generation error:', error)
-    return NextResponse.json({ error: 'レポート生成に失敗しました' }, { status: 500 })
+    const errMsg = error instanceof Error ? error.message : 'レポート生成に失敗しました'
+    return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 }

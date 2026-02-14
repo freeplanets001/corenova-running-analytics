@@ -6,26 +6,57 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-async function getGeminiClient(teamId: string) {
-  const { data: settings } = await supabase
-    .from('api_settings')
-    .select('api_key_encrypted, model_name')
-    .eq('team_id', teamId)
-    .eq('provider', 'gemini')
-    .eq('is_configured', true)
+async function getGeminiConfig(teamId: string) {
+  // 1. Try env var first
+  if (process.env.GEMINI_API_KEY) {
+    const { GoogleGenAI } = await import('@google/genai')
+    return {
+      ai: new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }),
+      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+    }
+  }
+
+  // 2. Try DB settings
+  try {
+    const { data: settings } = await supabase
+      .from('api_settings')
+      .select('api_key_encrypted, model_name')
+      .eq('team_id', teamId)
+      .eq('provider', 'gemini')
+      .eq('is_configured', true)
+      .single()
+
+    if (settings?.api_key_encrypted) {
+      const { GoogleGenAI } = await import('@google/genai')
+      return {
+        ai: new GoogleGenAI({ apiKey: settings.api_key_encrypted }),
+        model: settings.model_name || 'gemini-2.0-flash',
+      }
+    }
+  } catch {
+    // api_settings table may not exist
+  }
+
+  return null
+}
+
+async function getTeamId(userId: string): Promise<string | null> {
+  // Try team_members first
+  const { data: membership } = await supabase
+    .from('team_members')
+    .select('team_id')
+    .eq('profile_id', userId)
+    .limit(1)
     .single()
 
-  if (!settings?.api_key_encrypted) return null
+  if (membership) return membership.team_id
 
-  const { GoogleGenAI } = await import('@google/genai')
-  return {
-    ai: new GoogleGenAI({ apiKey: settings.api_key_encrypted }),
-    model: settings.model_name || 'gemini-2.0-flash',
-  }
+  // Fallback: get first team
+  const { data: teams } = await supabase.from('teams').select('id').limit(1)
+  return teams?.[0]?.id || null
 }
 
 async function getTeamContext(teamId: string) {
-  // Fetch recent sessions with stats
   const { data: sessions } = await supabase
     .from('sessions')
     .select('id, session_date, test_type_id, notes, location')
@@ -43,7 +74,6 @@ async function getTeamContext(teamId: string) {
     .select('profile_id, role, profiles!team_members_profile_id_fkey(display_name, player_name)')
     .eq('team_id', teamId)
 
-  // Fetch recent runs
   const sessionIds = sessions?.map(s => s.id) || []
   let runs: { session_id: string; player_id: string; value: number; run_number: number }[] = []
   if (sessionIds.length > 0) {
@@ -74,10 +104,10 @@ async function getTeamContext(teamId: string) {
   return `## チームデータコンテキスト
 
 ### 登録選手 (${playerNames.length}名)
-${playerNames.join(', ')}
+${playerNames.join(', ') || 'なし'}
 
 ### 測定種目
-${(testTypes || []).map(t => `- ${t.name}（${t.unit}、${t.direction === 'decrease' ? '低い方が良い' : '高い方が良い'}）`).join('\n')}
+${(testTypes || []).map(t => `- ${t.name}（${t.unit}、${t.direction === 'decrease' ? '低い方が良い' : '高い方が良い'}）`).join('\n') || 'なし'}
 
 ### 直近のセッション
 ${sessionSummaries.join('\n') || 'セッションデータなし'}`
@@ -95,64 +125,61 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
     }
 
-    // Get team
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('profile_id', userId)
-      .limit(1)
-      .single()
-
-    if (!membership) {
-      return NextResponse.json({ error: 'チームに所属していません' }, { status: 403 })
+    const teamId = await getTeamId(userId)
+    if (!teamId) {
+      return NextResponse.json({ error: 'チームが見つかりません' }, { status: 404 })
     }
 
-    const teamId = membership.team_id
-
-    // Get Gemini client
-    const gemini = await getGeminiClient(teamId)
+    const gemini = await getGeminiConfig(teamId)
     if (!gemini) {
       return NextResponse.json({
-        error: 'AI機能が設定されていません。管理者がAI設定ページでAPIキーを設定してください。',
+        error: 'AI機能が設定されていません。管理者がAI設定ページでAPIキーを設定するか、環境変数GEMINI_API_KEYを設定してください。',
       }, { status: 400 })
     }
 
-    // Get or create conversation
+    // Get or create conversation (skip if tables don't exist)
     let convId = conversationId
-    if (!convId) {
-      const { data: conv } = await supabase
-        .from('ai_conversations')
-        .insert({ team_id: teamId, user_id: userId, title: message.slice(0, 50) })
-        .select('id')
-        .single()
-      convId = conv?.id
-    }
+    try {
+      if (!convId) {
+        const { data: conv } = await supabase
+          .from('ai_conversations')
+          .insert({ team_id: teamId, user_id: userId, title: message.slice(0, 50) })
+          .select('id')
+          .single()
+        convId = conv?.id
+      }
 
-    // Save user message
-    if (convId) {
-      await supabase.from('ai_chat_messages').insert({
-        conversation_id: convId,
-        role: 'user',
-        content: message,
-      })
+      if (convId) {
+        await supabase.from('ai_chat_messages').insert({
+          conversation_id: convId,
+          role: 'user',
+          content: message,
+        })
+      }
+    } catch {
+      // ai_conversations/ai_chat_messages tables may not exist yet
+      convId = null
     }
 
     // Get previous messages for context
     let chatHistory: { role: string; content: string }[] = []
     if (convId) {
-      const { data: prevMessages } = await supabase
-        .from('ai_chat_messages')
-        .select('role, content')
-        .eq('conversation_id', convId)
-        .order('created_at', { ascending: true })
-        .limit(20)
-      chatHistory = (prevMessages || []).filter(m => m.role !== 'system')
+      try {
+        const { data: prevMessages } = await supabase
+          .from('ai_chat_messages')
+          .select('role, content')
+          .eq('conversation_id', convId)
+          .order('created_at', { ascending: true })
+          .limit(20)
+        chatHistory = (prevMessages || []).filter(m => m.role !== 'system')
+      } catch {
+        // ignore
+      }
     }
 
-    // Build context
     const teamContext = await getTeamContext(teamId)
 
-    const systemPrompt = `あなたはCOREONVAランニング分析アプリのAIアシスタントです。
+    const systemPrompt = `あなたはCORENOVAランニング分析アプリのAIアシスタントです。
 バスケットボールチームのランニングセッション（走行タイム測定）データを分析し、
 選手やコーチに有益なアドバイスを提供します。
 
@@ -166,13 +193,11 @@ export async function POST(request: NextRequest) {
 
 ${teamContext}`
 
-    // Build conversation for Gemini
     const contents = [
       { role: 'user' as const, parts: [{ text: systemPrompt + '\n\n以上がシステム設定です。これからのユーザーの質問に回答してください。' }] },
-      { role: 'model' as const, parts: [{ text: 'はい、CONEROVAのAIアシスタントとして、チームのランニングデータに基づいてお答えします。何でもお聞きください。' }] },
+      { role: 'model' as const, parts: [{ text: 'はい、CORENOVAのAIアシスタントとして、チームのランニングデータに基づいてお答えします。何でもお聞きください。' }] },
     ]
 
-    // Add previous chat history (skip last message which is the current one we just saved)
     for (const msg of chatHistory.slice(0, -1)) {
       contents.push({
         role: msg.role === 'user' ? 'user' as const : 'model' as const,
@@ -180,10 +205,8 @@ ${teamContext}`
       })
     }
 
-    // Add current message
     contents.push({ role: 'user' as const, parts: [{ text: message }] })
 
-    // Call Gemini
     const response = await gemini.ai.models.generateContent({
       model: gemini.model,
       contents,
@@ -193,12 +216,16 @@ ${teamContext}`
 
     // Save AI response
     if (convId) {
-      await supabase.from('ai_chat_messages').insert({
-        conversation_id: convId,
-        role: 'assistant',
-        content: aiResponse,
-        tokens_used: response.usageMetadata?.totalTokenCount || null,
-      })
+      try {
+        await supabase.from('ai_chat_messages').insert({
+          conversation_id: convId,
+          role: 'assistant',
+          content: aiResponse,
+          tokens_used: response.usageMetadata?.totalTokenCount || null,
+        })
+      } catch {
+        // ignore save errors
+      }
     }
 
     return NextResponse.json({
@@ -207,9 +234,7 @@ ${teamContext}`
     })
   } catch (error) {
     console.error('AI Chat error:', error)
-    return NextResponse.json(
-      { error: 'AI応答の生成中にエラーが発生しました' },
-      { status: 500 }
-    )
+    const errMsg = error instanceof Error ? error.message : 'AI応答の生成中にエラーが発生しました'
+    return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 }

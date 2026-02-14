@@ -6,30 +6,73 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+async function getGeminiConfig(teamId: string) {
+  if (process.env.GEMINI_API_KEY) {
+    const { GoogleGenAI } = await import('@google/genai')
+    return {
+      ai: new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }),
+      model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+    }
+  }
+
+  try {
+    const { data: settings } = await supabase
+      .from('api_settings')
+      .select('api_key_encrypted, model_name')
+      .eq('team_id', teamId)
+      .eq('provider', 'gemini')
+      .eq('is_configured', true)
+      .single()
+
+    if (settings?.api_key_encrypted) {
+      const { GoogleGenAI } = await import('@google/genai')
+      return {
+        ai: new GoogleGenAI({ apiKey: settings.api_key_encrypted }),
+        model: settings.model_name || 'gemini-2.0-flash',
+      }
+    }
+  } catch {
+    // api_settings table may not exist
+  }
+  return null
+}
+
+async function getTeamId(userId: string): Promise<string | null> {
+  const { data: membership } = await supabase
+    .from('team_members')
+    .select('team_id')
+    .eq('profile_id', userId)
+    .limit(1)
+    .single()
+  if (membership) return membership.team_id
+
+  const { data: teams } = await supabase.from('teams').select('id').limit(1)
+  return teams?.[0]?.id || null
+}
+
 // GET: Fetch existing insights
 export async function GET(request: NextRequest) {
   try {
     const userId = request.nextUrl.searchParams.get('userId')
     if (!userId) return NextResponse.json({ insights: [] })
 
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('profile_id', userId)
-      .limit(1)
-      .single()
+    const teamId = await getTeamId(userId)
+    if (!teamId) return NextResponse.json({ insights: [] })
 
-    if (!membership) return NextResponse.json({ insights: [] })
+    try {
+      const { data: insights } = await supabase
+        .from('ai_insights')
+        .select('id, insight_type, title, content, summary, severity, created_at, is_read, is_pinned, session_id, player_id')
+        .eq('team_id', teamId)
+        .eq('is_dismissed', false)
+        .order('created_at', { ascending: false })
+        .limit(20)
 
-    const { data: insights } = await supabase
-      .from('ai_insights')
-      .select('id, insight_type, title, content, summary, severity, created_at, is_read, is_pinned, session_id, player_id')
-      .eq('team_id', membership.team_id)
-      .eq('is_dismissed', false)
-      .order('created_at', { ascending: false })
-      .limit(20)
-
-    return NextResponse.json({ insights: insights || [] })
+      return NextResponse.json({ insights: insights || [] })
+    } catch {
+      // ai_insights table may not exist
+      return NextResponse.json({ insights: [] })
+    }
   } catch (error) {
     console.error('Insights GET error:', error)
     return NextResponse.json({ insights: [] }, { status: 500 })
@@ -46,37 +89,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
     }
 
-    const { data: membership } = await supabase
-      .from('team_members')
-      .select('team_id')
-      .eq('profile_id', userId)
-      .limit(1)
-      .single()
-
-    if (!membership) {
-      return NextResponse.json({ error: 'チームに所属していません' }, { status: 403 })
+    const teamId = await getTeamId(userId)
+    if (!teamId) {
+      return NextResponse.json({ error: 'チームが見つかりません' }, { status: 404 })
     }
 
-    const teamId = membership.team_id
-
-    // Get Gemini client
-    const { data: settings } = await supabase
-      .from('api_settings')
-      .select('api_key_encrypted, model_name')
-      .eq('team_id', teamId)
-      .eq('provider', 'gemini')
-      .eq('is_configured', true)
-      .single()
-
-    if (!settings?.api_key_encrypted) {
+    const gemini = await getGeminiConfig(teamId)
+    if (!gemini) {
       return NextResponse.json({
-        error: 'AI機能が設定されていません。管理者がAI設定でAPIキーを設定してください。',
+        error: 'AI機能が設定されていません。管理者がAI設定ページでAPIキーを設定するか、環境変数GEMINI_API_KEYを設定してください。',
       }, { status: 400 })
     }
-
-    const { GoogleGenAI } = await import('@google/genai')
-    const ai = new GoogleGenAI({ apiKey: settings.api_key_encrypted })
-    const model = settings.model_name || 'gemini-2.0-flash'
 
     // Gather data
     const { data: sessions } = await supabase
@@ -115,7 +138,6 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    // Build data summary
     const sessionData = (sessions || []).map(s => {
       const sRuns = runs.filter(r => r.session_id === s.id)
       const values = sRuns.map(r => r.value)
@@ -172,10 +194,9 @@ ${JSON.stringify(sessionData, null, 2)}
 - 改善提案は実用的なものにしてください
 - データが不足している場合はそれを指摘してください`
 
-    const response = await ai.models.generateContent({ model, contents: prompt })
+    const response = await gemini.ai.models.generateContent({ model: gemini.model, contents: prompt })
     const text = response.text || '[]'
 
-    // Parse JSON from response
     let insights: Array<{
       insight_type: string
       title: string
@@ -190,10 +211,10 @@ ${JSON.stringify(sessionData, null, 2)}
       }
     } catch {
       console.error('Failed to parse AI insights response:', text)
-      return NextResponse.json({ error: 'インサイトの解析に失敗しました' }, { status: 500 })
+      return NextResponse.json({ error: 'インサイトの解析に失敗しました', insights: [] }, { status: 500 })
     }
 
-    // Save insights to DB
+    // Try to save insights to DB
     const validTypes = ['session_summary', 'trend_analysis', 'anomaly', 'recommendation', 'weekly_report', 'monthly_report']
     const insightRows = insights
       .filter(i => validTypes.includes(i.insight_type))
@@ -204,25 +225,39 @@ ${JSON.stringify(sessionData, null, 2)}
         content: i.content,
         summary: i.summary,
         severity: i.severity || 'info',
-        model_used: model,
+        model_used: gemini.model,
       }))
 
+    let savedInsights = insights.map((i, idx) => ({
+      id: `temp-${idx}`,
+      ...i,
+      created_at: new Date().toISOString(),
+      is_read: false,
+      is_pinned: false,
+    }))
+
     if (insightRows.length > 0) {
-      await supabase.from('ai_insights').insert(insightRows)
+      try {
+        await supabase.from('ai_insights').insert(insightRows)
+
+        const { data: allInsights } = await supabase
+          .from('ai_insights')
+          .select('id, insight_type, title, content, summary, severity, created_at, is_read, is_pinned')
+          .eq('team_id', teamId)
+          .eq('is_dismissed', false)
+          .order('created_at', { ascending: false })
+          .limit(20)
+
+        if (allInsights) savedInsights = allInsights
+      } catch {
+        // ai_insights table may not exist, return the generated insights directly
+      }
     }
 
-    // Fetch fresh list
-    const { data: allInsights } = await supabase
-      .from('ai_insights')
-      .select('id, insight_type, title, content, summary, severity, created_at, is_read, is_pinned')
-      .eq('team_id', teamId)
-      .eq('is_dismissed', false)
-      .order('created_at', { ascending: false })
-      .limit(20)
-
-    return NextResponse.json({ insights: allInsights || [], generated: insightRows.length })
+    return NextResponse.json({ insights: savedInsights, generated: insightRows.length })
   } catch (error) {
     console.error('Insights POST error:', error)
-    return NextResponse.json({ error: 'インサイト生成に失敗しました' }, { status: 500 })
+    const errMsg = error instanceof Error ? error.message : 'インサイト生成に失敗しました'
+    return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 }

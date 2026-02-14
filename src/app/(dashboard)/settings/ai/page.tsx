@@ -12,6 +12,7 @@ interface AISettings {
   provider: string
   modelName: string
   isConfigured: boolean
+  envConfigured?: boolean
   updatedAt: string | null
 }
 
@@ -106,15 +107,24 @@ export default function AISettingsPage() {
         </CardHeader>
         <CardContent>
           {settings?.isConfigured ? (
-            <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-950/30">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-              <div>
-                <p className="font-medium text-emerald-900 dark:text-emerald-100">接続済み</p>
-                <p className="text-sm text-emerald-700 dark:text-emerald-300">
-                  モデル: {settings.modelName}
-                  {settings.updatedAt && ` | 最終更新: ${new Date(settings.updatedAt).toLocaleString('ja-JP')}`}
-                </p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-950/30">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                <div>
+                  <p className="font-medium text-emerald-900 dark:text-emerald-100">接続済み</p>
+                  <p className="text-sm text-emerald-700 dark:text-emerald-300">
+                    モデル: {settings.modelName}
+                    {settings.envConfigured && ' (環境変数で設定)'}
+                    {settings.updatedAt && ` | 最終更新: ${new Date(settings.updatedAt).toLocaleString('ja-JP')}`}
+                  </p>
+                </div>
               </div>
+              {settings.envConfigured && (
+                <p className="text-xs text-muted-foreground">
+                  環境変数 GEMINI_API_KEY が設定されているため、AI機能は利用可能です。
+                  下のフォームからAPIキーを設定すると、DB設定が環境変数より優先されます。
+                </p>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">

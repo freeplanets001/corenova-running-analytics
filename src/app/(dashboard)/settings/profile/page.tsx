@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/hooks/use-auth'
 import { ROUTES } from '@/lib/constants/routes'
@@ -25,8 +24,7 @@ interface ProfileData {
 }
 
 export default function ProfileSettingsPage() {
-  const { user, loading: authLoading, signOut } = useAuth()
-  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -285,8 +283,8 @@ export default function ProfileSettingsPage() {
           <Button
             variant="destructive"
             onClick={async () => {
-              await signOut()
-              router.push(ROUTES.LOGIN)
+              await fetch('/api/auth/signout', { method: 'POST' })
+              window.location.href = ROUTES.LOGIN
             }}
           >
             <LogOut className="mr-2 h-4 w-4" />

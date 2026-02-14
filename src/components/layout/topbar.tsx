@@ -1,8 +1,7 @@
 'use client'
 
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/hooks/use-auth'
-import { createClient } from '@/lib/supabase/client'
 import { ROUTES } from '@/lib/constants/routes'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -54,7 +53,6 @@ interface TopbarProps {
 
 export function Topbar({ onMenuClick, unreadNotifications = 0 }: TopbarProps) {
   const pathname = usePathname()
-  const router = useRouter()
   const { user, profile, role } = useAuth()
 
   const pageTitle = getPageTitle(pathname)
@@ -74,10 +72,10 @@ export function Topbar({ onMenuClick, unreadNotifications = 0 }: TopbarProps) {
     viewer: '閲覧者',
   }
 
-  const supabase = createClient()
-
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
+    // サーバーサイドでセッションを破棄（cookieを確実に削除）
+    await fetch('/api/auth/signout', { method: 'POST' })
+    // フルリロードでログインページへ
     window.location.href = ROUTES.LOGIN
   }
 
@@ -104,7 +102,7 @@ export function Topbar({ onMenuClick, unreadNotifications = 0 }: TopbarProps) {
           variant="ghost"
           size="icon"
           className="relative"
-          onClick={() => router.push(ROUTES.NOTIFICATIONS)}
+          onClick={() => { window.location.href = ROUTES.NOTIFICATIONS }}
         >
           <Bell className="h-5 w-5" />
           {unreadNotifications > 0 && (
@@ -143,16 +141,19 @@ export function Topbar({ onMenuClick, unreadNotifications = 0 }: TopbarProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push(ROUTES.SETTINGS_PROFILE)}>
+            <DropdownMenuItem onSelect={() => { window.location.href = ROUTES.SETTINGS_PROFILE }}>
               <User className="mr-2 h-4 w-4" />
               プロフィール
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(ROUTES.SETTINGS_PROFILE)}>
+            <DropdownMenuItem onSelect={() => { window.location.href = ROUTES.SETTINGS_PROFILE }}>
               <Settings className="mr-2 h-4 w-4" />
               設定
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleSignOut() }} className="text-destructive focus:text-destructive">
+            <DropdownMenuItem
+              onSelect={(e) => { e.preventDefault(); handleSignOut() }}
+              className="text-destructive focus:text-destructive"
+            >
               <LogOut className="mr-2 h-4 w-4" />
               ログアウト
             </DropdownMenuItem>

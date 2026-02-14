@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/hooks/use-auth'
+import { createClient } from '@/lib/supabase/client'
 import { ROUTES } from '@/lib/constants/routes'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -54,7 +55,7 @@ interface TopbarProps {
 export function Topbar({ onMenuClick, unreadNotifications = 0 }: TopbarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, profile, role, signOut } = useAuth()
+  const { user, profile, role } = useAuth()
 
   const pageTitle = getPageTitle(pathname)
 
@@ -73,10 +74,11 @@ export function Topbar({ onMenuClick, unreadNotifications = 0 }: TopbarProps) {
     viewer: '閲覧者',
   }
 
-  const handleSignOut = () => {
-    signOut().then(() => {
-      router.push(ROUTES.LOGIN)
-    })
+  const supabase = createClient()
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    window.location.href = ROUTES.LOGIN
   }
 
   return (
@@ -150,7 +152,7 @@ export function Topbar({ onMenuClick, unreadNotifications = 0 }: TopbarProps) {
               設定
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); handleSignOut() }} className="text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" />
               ログアウト
             </DropdownMenuItem>
